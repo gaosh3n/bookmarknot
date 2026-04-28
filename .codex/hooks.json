@@ -1,0 +1,30 @@
+{
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "^Bash$",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.codex/hooks/block-no-verify.sh\"",
+                        "timeout": 30,
+                        "statusMessage": "Checking git commit policy"
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "^(apply_patch|Edit|Write)$",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.codex/hooks/code-quality-swift.sh\"",
+                        "timeout": 300,
+                        "statusMessage": "Checking code quality of Swift"
+                    }
+                ]
+            }
+        ]
+    }
+}
