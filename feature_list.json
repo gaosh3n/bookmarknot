@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "features": [
+    {
+      "description": "Pseudo feature item for validating the feature_list.json schema contract",
+      "steps": [
+        "Open the canonical feature_list.json file at the repository root",
+        "Verify the file matches the required versioned wrapper and feature item shape"
+      ],
+      "passes": false
+    }
+  ]
+}
