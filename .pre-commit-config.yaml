@@ -1,0 +1,34 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: swift-format
+        name: swift-format
+        entry: swift-format format --in-place --configuration .swift-format
+        language: system
+        types: [swift]
+
+      - id: swiftlint
+        name: SwiftLint
+        entry: swiftlint lint --strict --config .swiftlint.yml
+        language: system
+        pass_filenames: false
+        types: [swift]
+
+      - id: commit-msg-guardrail
+        name: commit-msg guardrail
+        entry: .githooks/commit-msg-guardrail.sh
+        language: system
+        stages: [commit-msg]

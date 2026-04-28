@@ -1,0 +1,47 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://bookmarknot.local/schemas/feature_list.schema.json",
+    "title": "bookmarknot feature_list.json",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "version",
+        "features"
+    ],
+    "properties": {
+        "version": {
+            "type": "integer",
+            "const": 1
+        },
+        "features": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "description",
+                    "steps",
+                    "passes"
+                ],
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "steps": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    },
+                    "passes": {
+                        "type": "boolean"
+                    }
+                }
+            }
+        }
+    }
+}
