@@ -1,0 +1,259 @@
+import Combine
+import Domain
+import Foundation
+
+public enum ArtifactKind: CaseIterable, Hashable, Sendable {
+  case chrome
+  case safari
+  case bookmarknot
+}
+
+public enum ArtifactListState: Equatable, Sendable {
+  case notRefreshed
+  case loaded
+}
+
+public enum SourceArtifactStatus: String, Equatable, Sendable {
+  case ready = "Ready"
+  case failed = "Failed"
+}
+
+public struct SourceArtifact: Identifiable, Equatable, Sendable {
+  public let id: String
+  public let browser: BrowserKind
+  public let path: String
+  public let createdAt: Date
+  public let bookmarkCount: Int?
+  public let folderCount: Int?
+  public let fileSize: Int64
+  public let status: SourceArtifactStatus
+  public let artifact: CanonicalArtifact?
+  public let errorDescription: String?
+
+  public init(
+    id: String,
+    browser: BrowserKind,
+    path: String,
+    createdAt: Date,
+    bookmarkCount: Int?,
+    folderCount: Int?,
+    fileSize: Int64,
+    status: SourceArtifactStatus,
+    artifact: CanonicalArtifact?,
+    errorDescription: String? = nil
+  ) {
+    self.id = id
+    self.browser = browser
+    self.path = path
+    self.createdAt = createdAt
+    self.bookmarkCount = bookmarkCount
+    self.folderCount = folderCount
+    self.fileSize = fileSize
+    self.status = status
+    self.artifact = artifact
+    self.errorDescription = errorDescription
+  }
+}
+
+public struct SavedArtifact: Identifiable, Equatable, Sendable {
+  public var id: String { hash }
+  public let hash: String
+  public let createdAt: Date
+  public let bookmarkCount: Int
+  public let folderCount: Int
+  public let fileSize: Int64
+  public let artifact: CanonicalArtifact
+
+  public init(
+    hash: String,
+    createdAt: Date,
+    bookmarkCount: Int,
+    folderCount: Int,
+    fileSize: Int64,
+    artifact: CanonicalArtifact
+  ) {
+    self.hash = hash
+    self.createdAt = createdAt
+    self.bookmarkCount = bookmarkCount
+    self.folderCount = folderCount
+    self.fileSize = fileSize
+    self.artifact = artifact
+  }
+
+  public var shortHash: String { String(hash.prefix(12)) }
+}
+
+public enum ArtifactSaveOutcome: Equatable, Sendable {
+  case created(SavedArtifact)
+  case existing(SavedArtifact)
+}
+
+public protocol BookmarknotServices: AnyObject {
+  func refreshSource(_ browser: BrowserKind) throws -> [SourceArtifact]
+  func refreshSavedArtifacts() throws -> [SavedArtifact]
+  func canonicalize(_ root: BookmarkNode) throws -> CanonicalArtifact
+  func save(_ artifact: CanonicalArtifact) throws -> ArtifactSaveOutcome
+  func runtimeLog() -> String
+  func cleanRuntimeLog() throws
+  func log(_ message: String)
+}
+
+public enum UserDialog: String, Identifiable, Sendable {
+  case cannotLoad = "Cannot load artifacts. See Runtime Log."
+  case noChange = "No change in artifact."
+  case generationAborted = "Generation aborted. See Runtime Log."
+
+  public var id: String { rawValue }
+}
+
+@MainActor
+public final class BookmarknotModel: ObservableObject {
+  @Published public private(set) var chromeState: ArtifactListState = .notRefreshed
+  @Published public private(set) var safariState: ArtifactListState = .notRefreshed
+  @Published public private(set) var bookmarknotState: ArtifactListState = .notRefreshed
+  @Published public private(set) var chromeArtifacts: [SourceArtifact] = []
+  @Published public private(set) var safariArtifacts: [SourceArtifact] = []
+  @Published public private(set) var bookmarknotArtifacts: [SavedArtifact] = []
+  @Published public var selectedChromeID: SourceArtifact.ID?
+  @Published public var selectedSafariID: SourceArtifact.ID?
+  @Published public var selectedBookmarknotID: SavedArtifact.ID?
+  @Published public private(set) var generationSession: GenerationSession?
+  @Published public private(set) var runtimeLogContent = ""
+  @Published public var dialog: UserDialog?
+
+  private let services: BookmarknotServices
+  private var localArtifactsAreValid = false
+
+  public init(services: BookmarknotServices) {
+    self.services = services
+    runtimeLogContent = services.runtimeLog()
+  }
+
+  public var canGenerate: Bool {
+    localArtifactsAreValid && (selectedChromeArtifact != nil || selectedSafariArtifact != nil)
+  }
+
+  public func refresh(_ kind: ArtifactKind) {
+    switch kind {
+    case .chrome: refreshChrome()
+    case .safari: refreshSafari()
+    case .bookmarknot: refreshBookmarknot()
+    }
+    runtimeLogContent = services.runtimeLog()
+  }
+
+  public func beginGeneration() {
+    guard canGenerate else { return }
+    let current = selectedSafariArtifact?.artifact?.root.bookmarkNode
+    let incoming = selectedChromeArtifact?.artifact?.root.bookmarkNode
+    let session = GenerationSession(current: current, incoming: incoming)
+    guard session.totalCount > 0 else {
+      services.log("Generation failed: selected sources contain no supported bookmarks.")
+      runtimeLogContent = services.runtimeLog()
+      dialog = .generationAborted
+      return
+    }
+    generationSession = session
+  }
+
+  public func resolveDecision(_ id: String, as state: DecisionState, recursively: Bool) {
+    generationSession?.resolve(id, as: state, recursively: recursively)
+  }
+
+  public func cancelGeneration() {
+    generationSession = nil
+  }
+
+  public func completeGeneration() {
+    guard let root = generationSession?.resolvedRoot() else { return }
+    do {
+      let artifact = try services.canonicalize(root)
+      let outcome = try services.save(artifact)
+      generationSession = nil
+      guard refreshBookmarknot() else { return }
+      switch outcome {
+      case .created(let saved):
+        selectedBookmarknotID = saved.id
+      case .existing(let saved):
+        selectedBookmarknotID = saved.id
+        dialog = .noChange
+      }
+    } catch {
+      services.log("Generation failed: \(error)")
+      generationSession = nil
+      runtimeLogContent = services.runtimeLog()
+      dialog = .generationAborted
+    }
+  }
+
+  public func cleanRuntimeLog() {
+    do {
+      try services.cleanRuntimeLog()
+      runtimeLogContent = ""
+    } catch {
+      services.log("Runtime log clean failed: \(error)")
+      runtimeLogContent = services.runtimeLog()
+    }
+  }
+
+  private var selectedChromeArtifact: SourceArtifact? {
+    chromeArtifacts.first { $0.id == selectedChromeID && $0.status == .ready }
+  }
+
+  private var selectedSafariArtifact: SourceArtifact? {
+    safariArtifacts.first { $0.id == selectedSafariID && $0.status == .ready }
+  }
+
+  private func refreshChrome() {
+    do {
+      chromeArtifacts = try services.refreshSource(.chrome)
+      chromeState = .loaded
+      selectedChromeID = defaultSourceSelection(in: chromeArtifacts)
+    } catch {
+      chromeArtifacts = []
+      chromeState = .loaded
+      selectedChromeID = nil
+      services.log("Chrome refresh failed: \(error)")
+      dialog = .cannotLoad
+    }
+  }
+
+  private func refreshSafari() {
+    do {
+      safariArtifacts = try services.refreshSource(.safari)
+      safariState = .loaded
+      selectedSafariID = defaultSourceSelection(in: safariArtifacts)
+    } catch {
+      safariArtifacts = []
+      safariState = .loaded
+      selectedSafariID = nil
+      services.log("Safari refresh failed: \(error)")
+      dialog = .cannotLoad
+    }
+  }
+
+  @discardableResult
+  private func refreshBookmarknot() -> Bool {
+    do {
+      bookmarknotArtifacts = try services.refreshSavedArtifacts()
+      bookmarknotState = .loaded
+      localArtifactsAreValid = true
+      if !bookmarknotArtifacts.contains(where: { $0.id == selectedBookmarknotID }) {
+        selectedBookmarknotID = bookmarknotArtifacts.first?.id
+      }
+      return true
+    } catch {
+      bookmarknotArtifacts = []
+      bookmarknotState = .loaded
+      selectedBookmarknotID = nil
+      localArtifactsAreValid = false
+      services.log("Bookmarknot refresh failed: \(error)")
+      dialog = .cannotLoad
+      return false
+    }
+  }
+
+  private func defaultSourceSelection(in artifacts: [SourceArtifact]) -> SourceArtifact.ID? {
+    artifacts.first(where: { $0.status == .ready })?.id ?? artifacts.first?.id
+  }
+}

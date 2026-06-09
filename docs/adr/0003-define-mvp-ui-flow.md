@@ -29,6 +29,9 @@ The app will use a single main window. The sidebar contains two items:
 - `Configuration`
 - `Runtime Log`
 
+The main window retains the standard macOS close, minimize, and zoom controls. Its titlebar does
+not display a panel title or separator line above the panel content.
+
 The app opens to `Configuration`. No artifact list refreshes automatically on launch. Lists start in a not-refreshed state.
 
 The `Configuration` panel contains three vertically separated, resizable sections:
@@ -45,11 +48,15 @@ Each `Refresh` button has a tip icon with the tooltip:
 Refresh the list if it is empty now.
 ```
 
-`Generate` is always visible. When disabled, it also has a tip icon with the same tooltip.
+`Generate` is always visible and does not have a separate tip icon. The Bookmarknot section's
+`Refresh` control provides the refresh hint for that section.
 
 ### Configuration Tables
 
 Each artifact section displays rows in a multi-column list rather than a separate detail strip.
+Column headers remain visible when a list is not refreshed or has no artifacts. The state message
+is displayed as a watermark in the row area below the headers and remains centered in the visible
+list area while columns scroll horizontally.
 
 Columns are configurable per section. Users can toggle optional columns on or off. Column visibility preferences persist across app launches. Section heights and column widths also persist across app launches.
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- This is a docs-first repository for bookmarknot workflow and repo-policy bootstrap.
+- This is a SwiftPM-first native macOS application for the Bookmarknot MVP.
 
 ## Commands
 
@@ -18,8 +18,9 @@
 
 ### Project Entrypoints
 
-- There is no `Package.swift`, app target, test runner, or other runnable project entrypoint in this repo today.
-- Do not invent build, test, lint, format, or deploy commands in agent output.
+- Build the package: `swift build`
+- Run the macOS application: `swift run bookmarknot`
+- Run the non-UI test suite: `swift test`
 - Prefer one documented command per workflow when possible. If multiple commands are required, document the narrowest verified entrypoint for each task.
 
 ## Workflow
@@ -31,7 +32,8 @@
 
 ## Testing
 
-- There is no verified automated test command in this repo today.
+- Use `swift test` as the verified automated test entrypoint.
+- Domain tests cover canonical artifacts and generation decisions; Application tests use fake services; Infrastructure tests use isolated temporary directories.
 - Do not claim code is tested unless you ran a real command and report the exact command you used.
 - Prefer a single documented test entrypoint over ad hoc per-file commands unless the toolchain makes that impossible.
 
@@ -39,6 +41,16 @@
 
 ```text
 /
+├── Package.swift                              # SwiftPM package and dependency boundaries
+├── Sources/
+│   ├── UI/                                    # SwiftUI app and presentation
+│   ├── Application/                           # complete user-operation coordination
+│   ├── Domain/                                # Bookmarknot business rules
+│   └── Infrastructure/                        # filesystem and browser adapters
+├── Tests/
+│   ├── ApplicationTests/
+│   ├── DomainTests/
+│   └── InfrastructureTests/
 ├── CONTEXT.md                                 # canonical repo language
 └── docs/
     ├── agents/
