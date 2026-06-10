@@ -92,3 +92,49 @@ func generationResolvesFoldersRecursivelyAndPreventsSameURLFromBothSides() {
   #expect(session.decisions.first { $0.side == .current && $0.kind == .leaf }?.state == .rejected)
   #expect(session.resolvedRoot() != nil)
 }
+
+@Test
+func generationDoesNotRequireDecisionsForUnchangedContent() {
+  let shared = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "Shared",
+        children: [.leaf(title: "Example", url: "https://example.com")]
+      )
+    ]
+  )
+
+  let session = GenerationSession(current: shared, incoming: shared)
+
+  #expect(session.decisions.isEmpty)
+  #expect(session.isResolved)
+  #expect(session.hasAcceptedContent)
+  #expect(session.resolvedRoot() == shared)
+}
+
+@Test
+func generationCreatesDecisionsOnlyForChangedOccurrences() throws {
+  let shared = BookmarkNode.leaf(title: "Shared", url: "https://shared.example")
+  let currentOnly = BookmarkNode.leaf(title: "Current", url: "https://current.example")
+  let incomingOnly = BookmarkNode.leaf(title: "Incoming", url: "https://incoming.example")
+  let current = BookmarkNode.folder(title: "", children: [shared, currentOnly])
+  let incoming = BookmarkNode.folder(title: "", children: [shared, incomingOnly])
+  var session = GenerationSession(current: current, incoming: incoming)
+
+  #expect(session.decisions.map(\.title) == ["Current", "Incoming"])
+
+  let currentDecision = try #require(
+    session.decisions.first { $0.side == .current && $0.title == "Current" }
+  )
+  let incomingDecision = try #require(
+    session.decisions.first { $0.side == .incoming && $0.title == "Incoming" }
+  )
+  session.resolve(currentDecision.id, as: .accepted)
+  session.resolve(incomingDecision.id, as: .rejected)
+
+  #expect(
+    session.resolvedRoot()
+      == .folder(title: "", children: [shared, currentOnly])
+  )
+}

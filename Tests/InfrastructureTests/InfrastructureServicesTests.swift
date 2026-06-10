@@ -57,6 +57,18 @@ func safariRefreshExcludesSystemAreasAndProxyNodes() throws {
 }
 
 @Test
+func safariRefreshFailsWhenLeafTitleIsMissing() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  try fixture.writeSafariBookmarksWithoutLeafTitle()
+  let services = InfrastructureServices(paths: fixture.paths)
+
+  #expect(throws: InfrastructureError.self) {
+    try services.refreshSource(.safari)
+  }
+}
+
+@Test
 func allFailedRefreshReplacesThePreviousConvertedCache() throws {
   let fixture = try Fixture()
   defer { fixture.clean() }
@@ -167,6 +179,23 @@ private struct Fixture {
             ]
           ],
         ],
+      ]
+    ]
+    let data = try PropertyListSerialization.data(
+      fromPropertyList: plist, format: .binary, options: 0)
+    try data.write(to: paths.safariBookmarks)
+  }
+
+  func writeSafariBookmarksWithoutLeafTitle() throws {
+    let parent = paths.safariBookmarks.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+    let plist: [String: Any] = [
+      "Children": [
+        [
+          "WebBookmarkType": "WebBookmarkTypeLeaf",
+          "URLString": "https://example.com",
+          "URIDictionary": [:],
+        ]
       ]
     ]
     let data = try PropertyListSerialization.data(

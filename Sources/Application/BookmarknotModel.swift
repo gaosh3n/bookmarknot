@@ -147,7 +147,7 @@ public final class BookmarknotModel: ObservableObject {
     let current = selectedSafariArtifact?.artifact?.root.bookmarkNode
     let incoming = selectedChromeArtifact?.artifact?.root.bookmarkNode
     let session = GenerationSession(current: current, incoming: incoming)
-    guard session.totalCount > 0 else {
+    guard session.totalCount > 0 || session.hasAcceptedContent else {
       services.log("Generation failed: selected sources contain no supported bookmarks.")
       runtimeLogContent = services.runtimeLog()
       dialog = .generationAborted
@@ -238,9 +238,7 @@ public final class BookmarknotModel: ObservableObject {
       bookmarknotArtifacts = try services.refreshSavedArtifacts()
       bookmarknotState = .loaded
       localArtifactsAreValid = true
-      if !bookmarknotArtifacts.contains(where: { $0.id == selectedBookmarknotID }) {
-        selectedBookmarknotID = bookmarknotArtifacts.first?.id
-      }
+      selectedBookmarknotID = bookmarknotArtifacts.first?.id
       return true
     } catch {
       bookmarknotArtifacts = []

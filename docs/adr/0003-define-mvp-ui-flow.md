@@ -48,8 +48,7 @@ Each `Refresh` button has a tip icon with the tooltip:
 Refresh the list if it is empty now.
 ```
 
-`Generate` is always visible and does not have a separate tip icon. The Bookmarknot section's
-`Refresh` control provides the refresh hint for that section.
+`Generate` is always visible. When disabled, it also has a tip icon with the same tooltip.
 
 ### Configuration Tables
 

@@ -47,24 +47,34 @@ public struct DecisionOccurrence: Identifiable, Equatable, Sendable {
   }
 }
 
+private struct GenerationPlan {
+  var decisionIDs = Set<String>()
+  var includedIDs = Set<String>()
+}
+
 public struct GenerationSession: Equatable, Sendable {
   public let current: BookmarkNode?
   public let incoming: BookmarkNode?
   public private(set) var decisions: [DecisionOccurrence]
+  private let automaticallyIncludedIDs: Set<String>
 
   public init(current: BookmarkNode?, incoming: BookmarkNode?) {
     self.current = current
     self.incoming = incoming
+    let plan = Self.classify(current: current, incoming: incoming)
+    automaticallyIncludedIDs = plan.includedIDs
     var occurrences: [DecisionOccurrence] = []
     if let current { Self.appendOccurrences(from: current, side: .current, to: &occurrences) }
     if let incoming { Self.appendOccurrences(from: incoming, side: .incoming, to: &occurrences) }
-    decisions = occurrences
+    decisions = occurrences.filter { plan.decisionIDs.contains($0.id) }
   }
 
   public var resolvedCount: Int { decisions.count(where: { $0.state != .unresolved }) }
   public var totalCount: Int { decisions.count }
-  public var isResolved: Bool { !decisions.isEmpty && resolvedCount == totalCount }
-  public var hasAcceptedContent: Bool { decisions.contains(where: { $0.state == .accepted }) }
+  public var isResolved: Bool { resolvedCount == totalCount }
+  public var hasAcceptedContent: Bool {
+    !automaticallyIncludedIDs.isEmpty || decisions.contains(where: { $0.state == .accepted })
+  }
 
   public mutating func resolve(_ id: String, as state: DecisionState, recursively: Bool = false) {
     guard state != .unresolved, let target = decisions.first(where: { $0.id == id }) else { return }
@@ -109,7 +119,9 @@ public struct GenerationSession: Equatable, Sendable {
 
   private func filtered(_ node: BookmarkNode, side: GenerationSide, path: [Int]) -> BookmarkNode? {
     let id = Self.id(side: side, path: path)
-    guard let decision = decisions.first(where: { $0.id == id }) else { return nil }
+    guard let decision = decisions.first(where: { $0.id == id }) else {
+      return automaticallyIncludedIDs.contains(id) ? node : nil
+    }
     switch node {
     case .leaf:
       return decision.state == .accepted ? node : nil
@@ -132,6 +144,134 @@ public struct GenerationSession: Equatable, Sendable {
     guard case .folder(_, let children) = root else { return }
     for (index, child) in children.enumerated() {
       append(child, side: side, path: [index], depth: 0, to: &result)
+    }
+  }
+
+  private static func classify(
+    current: BookmarkNode?,
+    incoming: BookmarkNode?
+  ) -> GenerationPlan {
+    var plan = GenerationPlan()
+    switch (current, incoming) {
+    case (.folder(_, let currentChildren), .folder(_, let incomingChildren)):
+      classifyChildren(
+        currentChildren,
+        incomingChildren,
+        currentParentPath: [],
+        incomingParentPath: [],
+        plan: &plan
+      )
+    case (.some(let current), nil):
+      markDecisionSubtree(
+        current, side: .current, path: [], decisionIDs: &plan.decisionIDs)
+    case (nil, .some(let incoming)):
+      markDecisionSubtree(
+        incoming, side: .incoming, path: [], decisionIDs: &plan.decisionIDs)
+    default:
+      break
+    }
+    return plan
+  }
+
+  private static func classifyChildren(
+    _ currentChildren: [BookmarkNode],
+    _ incomingChildren: [BookmarkNode],
+    currentParentPath: [Int],
+    incomingParentPath: [Int],
+    plan: inout GenerationPlan
+  ) {
+    var matchedIncoming = Set<Int>()
+
+    for (currentIndex, currentNode) in currentChildren.enumerated() {
+      let currentPath = currentParentPath + [currentIndex]
+      guard
+        let incomingIndex = incomingChildren.indices.first(where: {
+          !matchedIncoming.contains($0) && nodesMatch(currentNode, incomingChildren[$0])
+        })
+      else {
+        markDecisionSubtree(
+          currentNode,
+          side: .current,
+          path: currentPath,
+          decisionIDs: &plan.decisionIDs
+        )
+        continue
+      }
+
+      matchedIncoming.insert(incomingIndex)
+      let incomingNode = incomingChildren[incomingIndex]
+      let incomingPath = incomingParentPath + [incomingIndex]
+      if equivalent(currentNode, incomingNode) {
+        plan.includedIDs.insert(id(side: .current, path: currentPath))
+        continue
+      }
+
+      plan.decisionIDs.insert(id(side: .current, path: currentPath))
+      plan.decisionIDs.insert(id(side: .incoming, path: incomingPath))
+      if case .folder(_, let currentDescendants) = currentNode {
+        if case .folder(_, let incomingDescendants) = incomingNode {
+          classifyChildren(
+            currentDescendants,
+            incomingDescendants,
+            currentParentPath: currentPath,
+            incomingParentPath: incomingPath,
+            plan: &plan
+          )
+        }
+      }
+    }
+
+    for (incomingIndex, incomingNode) in incomingChildren.enumerated()
+    where !matchedIncoming.contains(incomingIndex) {
+      markDecisionSubtree(
+        incomingNode,
+        side: .incoming,
+        path: incomingParentPath + [incomingIndex],
+        decisionIDs: &plan.decisionIDs
+      )
+    }
+  }
+
+  private static func nodesMatch(_ lhs: BookmarkNode, _ rhs: BookmarkNode) -> Bool {
+    switch (lhs, rhs) {
+    case (.folder(let lhsTitle, _), .folder(let rhsTitle, _)):
+      return BookmarkNormalization.text(lhsTitle) == BookmarkNormalization.text(rhsTitle)
+    case (.leaf(_, let lhsURL), .leaf(_, let rhsURL)):
+      return BookmarkNormalization.urlIdentity(lhsURL)
+        == BookmarkNormalization.urlIdentity(rhsURL)
+    default:
+      return false
+    }
+  }
+
+  private static func equivalent(_ lhs: BookmarkNode, _ rhs: BookmarkNode) -> Bool {
+    switch (lhs, rhs) {
+    case (.folder(let lhsTitle, let lhsChildren), .folder(let rhsTitle, let rhsChildren)):
+      guard BookmarkNormalization.text(lhsTitle) == BookmarkNormalization.text(rhsTitle) else {
+        return false
+      }
+      guard lhsChildren.count == rhsChildren.count else { return false }
+      return zip(lhsChildren, rhsChildren).allSatisfy(equivalent)
+    case (.leaf(let lhsTitle, let lhsURL), .leaf(let rhsTitle, let rhsURL)):
+      return lhsTitle == rhsTitle && lhsURL == rhsURL
+    default:
+      return false
+    }
+  }
+
+  private static func markDecisionSubtree(
+    _ node: BookmarkNode,
+    side: GenerationSide,
+    path: [Int],
+    decisionIDs: inout Set<String>
+  ) {
+    if !path.isEmpty {
+      decisionIDs.insert(id(side: side, path: path))
+    }
+    guard case .folder(_, let children) = node else { return }
+    for (index, child) in children.enumerated() {
+      markDecisionSubtree(
+        child, side: side, path: path + [index], decisionIDs: &decisionIDs)
     }
   }
 

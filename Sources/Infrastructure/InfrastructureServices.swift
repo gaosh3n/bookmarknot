@@ -384,11 +384,13 @@ private enum SafariImporter {
       else { throw InfrastructureError.invalidSafari("list node is missing Title or Children") }
       return .folder(title: title, children: try children.compactMap(parseNode))
     case "WebBookmarkTypeLeaf":
-      guard let url = object["URLString"] as? String else {
-        throw InfrastructureError.invalidSafari("leaf node is missing URLString")
+      guard let url = object["URLString"] as? String,
+        let uri = object["URIDictionary"] as? [String: Any],
+        let title = uri["title"] as? String
+      else {
+        throw InfrastructureError.invalidSafari(
+          "leaf node is missing URLString or URIDictionary.title")
       }
-      let uri = object["URIDictionary"] as? [String: Any]
-      let title = (uri?["title"] as? String) ?? ""
       return .leaf(title: title, url: url)
     default:
       throw InfrastructureError.invalidSafari("unknown node type \(type)")

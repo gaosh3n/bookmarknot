@@ -93,7 +93,6 @@ private struct ConfigurationView: View {
 
       VStack(spacing: 0) {
         VStack(spacing: 0) {
-          PanelSeparator()
           SourceSection(
             title: "Chrome Artifacts",
             kind: .chrome,
@@ -649,8 +648,6 @@ private struct RuntimeLogView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      PanelSeparator()
-
       VStack(spacing: PanelLayout.spacing) {
         HStack {
           Text("Runtime Log").font(.headline)
