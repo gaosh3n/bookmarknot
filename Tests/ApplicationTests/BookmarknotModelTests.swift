@@ -210,6 +210,44 @@ func failedPostSaveRefreshKeepsTheLoadErrorAndClearsSelection() throws {
 
 @MainActor
 @Test
+func failedBookmarknotRefreshClearsStaleArtifactsAndDisablesGeneration() throws {
+  let services = FakeServices()
+  let seededArtifact = try services.canonicalize(
+    .folder(title: "", children: [.leaf(title: "Example", url: "https://example.com")])
+  )
+  services.setSavedArtifacts([
+    SavedArtifact(
+      hash: "hash",
+      createdAt: Date(),
+      bookmarkCount: 1,
+      folderCount: 0,
+      fileSize: Int64(seededArtifact.data.count),
+      artifact: seededArtifact
+    )
+  ])
+  let model = BookmarknotModel(services: services)
+  model.refresh(.chrome)
+  model.refresh(.bookmarknot)
+  #expect(model.canGenerate)
+
+  services.failSavedArtifactRefresh(with: FakeError.cannotRefreshSavedArtifacts)
+  model.refresh(.bookmarknot)
+
+  #expect(model.bookmarknotArtifacts.isEmpty)
+  #expect(model.selectedBookmarknotID == nil)
+  #expect(!model.canGenerate)
+  #expect(model.dialog == .cannotLoad)
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .error
+        && $0.message == "Bookmarknot refresh failed: cannotRefreshSavedArtifacts"
+    })
+  #expect(
+    model.runtimeLogContent.contains("Bookmarknot refresh failed: cannotRefreshSavedArtifacts"))
+}
+
+@MainActor
+@Test
 func bookmarknotRefreshSelectsTheNewestArtifact() throws {
   let services = FakeServices()
   let artifact = try services.canonicalize(
@@ -274,6 +312,10 @@ private final class FakeServices: BookmarknotServices {
 
   func setSavedArtifacts(_ artifacts: [SavedArtifact]) {
     saved = artifacts
+  }
+
+  func failSavedArtifactRefresh(with error: Error) {
+    savedArtifactRefreshError = error
   }
 
   func refreshSource(_ browser: BrowserKind) throws -> [SourceArtifact] {

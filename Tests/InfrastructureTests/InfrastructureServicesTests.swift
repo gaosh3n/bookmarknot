@@ -1,5 +1,6 @@
 import Application
 import Combine
+import CryptoKit
 import Domain
 import Foundation
 import Testing
@@ -98,6 +99,84 @@ func nonArtifactEntriesInvalidateTheSavedArtifactDirectory() throws {
   #expect(throws: InfrastructureError.self) {
     try services.refreshSavedArtifacts()
   }
+}
+
+@Test
+func malformedSavedArtifactsInvalidateTheSavedArtifactDirectory() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  try fixture.writeSavedArtifact(named: Data("not json".utf8))
+  let services = InfrastructureServices(paths: fixture.paths)
+
+  #expect(throws: ArtifactError.self) {
+    try services.refreshSavedArtifacts()
+  }
+}
+
+@Test
+func hashMismatchesInvalidateTheSavedArtifactDirectory() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  let services = InfrastructureServices(paths: fixture.paths)
+  let artifact = try services.canonicalize(
+    .folder(title: "", children: [.leaf(title: "Example", url: "https://example.com")])
+  )
+  try fixture.writeSavedArtifact(
+    data: artifact.data, filenameHash: String(repeating: "0", count: 64))
+
+  #expect(throws: InfrastructureError.self) {
+    try services.refreshSavedArtifacts()
+  }
+}
+
+@Test
+func nonCanonicalSavedArtifactsInvalidateTheSavedArtifactDirectory() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  let services = InfrastructureServices(paths: fixture.paths)
+  let artifact = try services.canonicalize(
+    .folder(title: "", children: [.leaf(title: "Example", url: "https://example.com")])
+  )
+  let nonCanonical = artifact.data.replacing(
+    Data("\n".utf8),
+    with: Data(),
+    maxReplacements: 1
+  )
+  try fixture.writeSavedArtifact(named: nonCanonical)
+
+  #expect(throws: ArtifactError.self) {
+    try services.refreshSavedArtifacts()
+  }
+}
+
+@Test
+func subdirectoriesInvalidateTheSavedArtifactDirectory() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  let directory = fixture.paths.applicationSupport.appending(path: "artifacts")
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  try FileManager.default.createDirectory(
+    at: directory.appending(path: "nested"),
+    withIntermediateDirectories: true
+  )
+  let services = InfrastructureServices(paths: fixture.paths)
+
+  #expect(throws: InfrastructureError.self) {
+    try services.refreshSavedArtifacts()
+  }
+}
+
+@Test
+func missingSavedArtifactDirectoryIsCreatedAsAnEmptyValidState() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  let services = InfrastructureServices(paths: fixture.paths)
+  let directory = fixture.paths.applicationSupport.appending(path: "artifacts")
+
+  let artifacts = try services.refreshSavedArtifacts()
+
+  #expect(artifacts.isEmpty)
+  #expect(FileManager.default.fileExists(atPath: directory.path))
 }
 
 @Test
@@ -226,6 +305,16 @@ private struct Fixture {
     try Data("not valid JSON".utf8).write(to: bookmarks, options: [.atomic])
   }
 
+  func writeSavedArtifact(named data: Data) throws {
+    try writeSavedArtifact(data: data, filenameHash: sha256(data))
+  }
+
+  func writeSavedArtifact(data: Data, filenameHash: String) throws {
+    let directory = paths.applicationSupport.appending(path: "artifacts")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try data.write(to: directory.appending(path: "\(filenameHash).json"), options: [.atomic])
+  }
+
   // swiftlint:disable trailing_comma
   func writeSafariBookmarks() throws {
     let parent = paths.safariBookmarks.deletingLastPathComponent()
@@ -279,5 +368,9 @@ private struct Fixture {
 
   func clean() {
     try? FileManager.default.removeItem(at: root)
+  }
+
+  private func sha256(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 }
