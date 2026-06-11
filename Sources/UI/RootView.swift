@@ -13,6 +13,7 @@ private enum PanelLayout {
   static let separatorHeight = 12.0
   static let horizontalInset = 12.0
   static let tableHeaderHeight = 30.0
+  static let resizeHandleWidth = 10.0
 }
 
 private enum PanelCopy {
@@ -71,22 +72,31 @@ struct RootView: View {
 
 private struct ConfigurationView: View {
   @ObservedObject var model: BookmarknotModel
+  @State private var layout: ConfigurationLayout
   @GestureState private var firstDividerOffset = 0.0
   @GestureState private var secondDividerOffset = 0.0
-  @AppStorage("layout.firstDivider") private var firstDividerPosition = 1.0 / 3.0
-  @AppStorage("layout.secondDivider") private var secondDividerPosition = 2.0 / 3.0
+  private let layoutStore: ConfigurationLayoutStore
+
+  init(
+    model: BookmarknotModel,
+    layoutStore: ConfigurationLayoutStore = ConfigurationLayoutStore()
+  ) {
+    self.model = model
+    self.layoutStore = layoutStore
+    _layout = State(initialValue: layoutStore.load())
+  }
 
   var body: some View {
     GeometryReader { geometry in
       let height = max(geometry.size.height, 1)
       let minimum = min(PanelLayout.minimumSectionHeight / height, 1.0 / 3.0)
       let first = clamped(
-        firstDividerPosition + firstDividerOffset / height,
+        layout.firstDividerPosition + firstDividerOffset / height,
         minimum: minimum,
-        maximum: secondDividerPosition - minimum
+        maximum: layout.secondDividerPosition - minimum
       )
       let second = clamped(
-        secondDividerPosition + secondDividerOffset / height,
+        layout.secondDividerPosition + secondDividerOffset / height,
         minimum: first + minimum,
         maximum: 1 - minimum
       )
@@ -99,6 +109,7 @@ private struct ConfigurationView: View {
             state: model.chromeState,
             artifacts: model.chromeArtifacts,
             selection: $model.selectedChromeID,
+            layout: $layout.chrome,
             model: model
           )
         }
@@ -112,6 +123,7 @@ private struct ConfigurationView: View {
             state: model.safariState,
             artifacts: model.safariArtifacts,
             selection: $model.selectedSafariID,
+            layout: $layout.safari,
             model: model
           )
         }
@@ -119,9 +131,15 @@ private struct ConfigurationView: View {
 
         VStack(spacing: 0) {
           PanelSeparator().gesture(secondGesture(height: height, minimum: minimum))
-          SavedSection(model: model)
+          SavedSection(model: model, layout: $layout.bookmarknot)
         }
         .frame(height: height * (1 - second))
+      }
+    }
+    .onChange(of: layout) { _, newLayout in
+      let sanitized = layoutStore.save(newLayout)
+      if sanitized != newLayout {
+        layout = sanitized
       }
     }
   }
@@ -130,10 +148,10 @@ private struct ConfigurationView: View {
     DragGesture(minimumDistance: 1)
       .updating($firstDividerOffset) { value, state, _ in state = value.translation.height }
       .onEnded { value in
-        firstDividerPosition = clamped(
-          firstDividerPosition + value.translation.height / height,
+        layout.firstDividerPosition = clamped(
+          layout.firstDividerPosition + value.translation.height / height,
           minimum: minimum,
-          maximum: secondDividerPosition - minimum
+          maximum: layout.secondDividerPosition - minimum
         )
       }
   }
@@ -142,9 +160,9 @@ private struct ConfigurationView: View {
     DragGesture(minimumDistance: 1)
       .updating($secondDividerOffset) { value, state, _ in state = value.translation.height }
       .onEnded { value in
-        secondDividerPosition = clamped(
-          secondDividerPosition + value.translation.height / height,
-          minimum: firstDividerPosition + minimum,
+        layout.secondDividerPosition = clamped(
+          layout.secondDividerPosition + value.translation.height / height,
+          minimum: layout.firstDividerPosition + minimum,
           maximum: 1 - minimum
         )
       }
@@ -161,6 +179,7 @@ private struct SourceSection: View {
   let state: ArtifactListState
   let artifacts: [SourceArtifact]
   @Binding var selection: SourceArtifact.ID?
+  @Binding var layout: SourceArtifactTableLayout
   @ObservedObject var model: BookmarknotModel
 
   var body: some View {
@@ -174,9 +193,9 @@ private struct SourceSection: View {
       .frame(height: PanelLayout.headerHeight)
 
       SourceArtifactTable(
-        storagePrefix: kind == .chrome ? "chrome" : "safari",
         state: state,
         artifacts: artifacts,
+        layout: $layout,
         selection: $selection
       )
     }
@@ -187,6 +206,7 @@ private struct SourceSection: View {
 
 private struct SavedSection: View {
   @ObservedObject var model: BookmarknotModel
+  @Binding var layout: SavedArtifactTableLayout
 
   var body: some View {
     VStack(spacing: PanelLayout.spacing) {
@@ -203,6 +223,7 @@ private struct SavedSection: View {
       SavedArtifactTable(
         state: model.bookmarknotState,
         artifacts: model.bookmarknotArtifacts,
+        layout: $layout,
         selection: $model.selectedBookmarknotID
       )
     }
@@ -252,74 +273,84 @@ private struct TipIcon: View {
 private struct SourceArtifactTable: View {
   let state: ArtifactListState
   let artifacts: [SourceArtifact]
+  @Binding var layout: SourceArtifactTableLayout
   @Binding var selection: SourceArtifact.ID?
-  @AppStorage private var showCreated: Bool
-  @AppStorage private var showCounts: Bool
-  @AppStorage private var showSize: Bool
-  @AppStorage private var showStatus: Bool
-  @AppStorage private var pathWidth: Double
-  @AppStorage private var createdWidth: Double
-  @AppStorage private var countsWidth: Double
-  @AppStorage private var sizeWidth: Double
-  @AppStorage private var statusWidth: Double
-
-  init(
-    storagePrefix: String,
-    state: ArtifactListState,
-    artifacts: [SourceArtifact],
-    selection: Binding<SourceArtifact.ID?>
-  ) {
-    self.state = state
-    self.artifacts = artifacts
-    _selection = selection
-    _showCreated = AppStorage(wrappedValue: true, "columns.\(storagePrefix).created")
-    _showCounts = AppStorage(wrappedValue: true, "columns.\(storagePrefix).counts")
-    _showSize = AppStorage(wrappedValue: true, "columns.\(storagePrefix).size")
-    _showStatus = AppStorage(wrappedValue: true, "columns.\(storagePrefix).status")
-    _pathWidth = AppStorage(wrappedValue: 320, "columns.\(storagePrefix).pathWidth")
-    _createdWidth = AppStorage(wrappedValue: 145, "columns.\(storagePrefix).createdWidth")
-    _countsWidth = AppStorage(wrappedValue: 140, "columns.\(storagePrefix).countsWidth")
-    _sizeWidth = AppStorage(wrappedValue: 80, "columns.\(storagePrefix).sizeWidth")
-    _statusWidth = AppStorage(wrappedValue: 80, "columns.\(storagePrefix).statusWidth")
-  }
+  @State private var pathPreviewWidth: Double?
+  @State private var createdPreviewWidth: Double?
+  @State private var countsPreviewWidth: Double?
+  @State private var sizePreviewWidth: Double?
+  @State private var statusPreviewWidth: Double?
 
   var body: some View {
     TableShell(state: state, isEmpty: artifacts.isEmpty) {
       HStack(spacing: 12) {
-        ResizableHeader(title: "Path", width: $pathWidth)
-        if showCreated { ResizableHeader(title: "Created", width: $createdWidth) }
-        if showCounts { ResizableHeader(title: "Bookmarks / Folders", width: $countsWidth) }
-        if showSize { ResizableHeader(title: "Size", width: $sizeWidth) }
-        if showStatus { ResizableHeader(title: "Status", width: $statusWidth) }
+        ResizableHeader(
+          title: "Path",
+          width: $layout.pathWidth,
+          previewWidth: $pathPreviewWidth
+        )
+        if layout.showCreated {
+          ResizableHeader(
+            title: "Created",
+            width: $layout.createdWidth,
+            previewWidth: $createdPreviewWidth
+          )
+        }
+        if layout.showCounts {
+          ResizableHeader(
+            title: "Bookmarks / Folders",
+            width: $layout.countsWidth,
+            previewWidth: $countsPreviewWidth
+          )
+        }
+        if layout.showSize {
+          ResizableHeader(title: "Size", width: $layout.sizeWidth, previewWidth: $sizePreviewWidth)
+        }
+        if layout.showStatus {
+          ResizableHeader(
+            title: "Status",
+            width: $layout.statusWidth,
+            previewWidth: $statusPreviewWidth
+          )
+        }
         ColumnMenu(
-          showCreated: $showCreated,
-          showCounts: $showCounts,
-          showSize: $showSize,
-          showStatus: $showStatus
+          showCreated: $layout.showCreated,
+          showCounts: $layout.showCounts,
+          showSize: $layout.showSize,
+          showStatus: $layout.showStatus
         )
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     } rows: {
       ScrollView {
         LazyVStack(spacing: 0) {
           ForEach(artifacts) { artifact in
-            HStack(spacing: 12) {
-              Text(artifact.path).lineLimit(1).frame(width: pathWidth, alignment: .leading)
-              if showCreated {
-                Text(artifact.createdAt, format: .dateTime)
-                  .frame(width: createdWidth, alignment: .leading)
+            HStack(alignment: .top, spacing: 12) {
+              TableValueCell(width: effectivePathWidth) {
+                Text(artifact.path)
               }
-              if showCounts {
-                Text(counts(artifact)).frame(width: countsWidth, alignment: .leading)
-              }
-              if showSize {
-                Text(byteCount(artifact.fileSize)).frame(width: sizeWidth, alignment: .leading)
-              }
-              if showStatus {
-                HStack(spacing: 4) {
-                  Text(artifact.status.rawValue)
+              if layout.showCreated {
+                TableValueCell(width: effectiveCreatedWidth) {
+                  Text(artifact.createdAt, format: .dateTime)
                 }
-                .foregroundStyle(artifact.status == .failed ? .orange : .primary)
-                .frame(width: statusWidth, alignment: .leading)
+              }
+              if layout.showCounts {
+                TableValueCell(width: effectiveCountsWidth) {
+                  Text(counts(artifact))
+                }
+              }
+              if layout.showSize {
+                TableValueCell(width: effectiveSizeWidth) {
+                  Text(byteCount(artifact.fileSize))
+                }
+              }
+              if layout.showStatus {
+                TableValueCell(width: effectiveStatusWidth) {
+                  HStack(spacing: 4) {
+                    Text(artifact.status.rawValue)
+                  }
+                  .foregroundStyle(artifact.status == .failed ? .orange : .primary)
+                }
               }
               Spacer(minLength: 0)
               if artifact.status == .failed {
@@ -327,7 +358,13 @@ private struct SourceArtifactTable: View {
               }
             }
             .padding(.horizontal, 8)
-            .frame(height: 28)
+            .frame(
+              minHeight: ConfigurationTablePresentation.sourceArtifactRowHeight(
+                artifact: artifact,
+                layout: effectiveLayout
+              ),
+              alignment: .topLeading
+            )
             .background(selection == artifact.id ? Color.accentColor.opacity(0.2) : Color.clear)
             .contentShape(Rectangle())
             .onTapGesture { selection = artifact.id }
@@ -335,6 +372,25 @@ private struct SourceArtifactTable: View {
         }
       }
     }
+  }
+
+  private var effectivePathWidth: Double { pathPreviewWidth ?? layout.pathWidth }
+  private var effectiveCreatedWidth: Double { createdPreviewWidth ?? layout.createdWidth }
+  private var effectiveCountsWidth: Double { countsPreviewWidth ?? layout.countsWidth }
+  private var effectiveSizeWidth: Double { sizePreviewWidth ?? layout.sizeWidth }
+  private var effectiveStatusWidth: Double { statusPreviewWidth ?? layout.statusWidth }
+  private var effectiveLayout: SourceArtifactTableLayout {
+    SourceArtifactTableLayout(
+      showCreated: layout.showCreated,
+      showCounts: layout.showCounts,
+      showSize: layout.showSize,
+      showStatus: layout.showStatus,
+      pathWidth: effectivePathWidth,
+      createdWidth: effectiveCreatedWidth,
+      countsWidth: effectiveCountsWidth,
+      sizeWidth: effectiveSizeWidth,
+      statusWidth: effectiveStatusWidth
+    )
   }
 
   private func counts(_ artifact: SourceArtifact) -> String {
@@ -348,50 +404,80 @@ private struct SourceArtifactTable: View {
 private struct SavedArtifactTable: View {
   let state: ArtifactListState
   let artifacts: [SavedArtifact]
+  @Binding var layout: SavedArtifactTableLayout
   @Binding var selection: SavedArtifact.ID?
-  @AppStorage("columns.bookmarknot.created") private var showCreated = true
-  @AppStorage("columns.bookmarknot.counts") private var showCounts = true
-  @AppStorage("columns.bookmarknot.size") private var showSize = true
-  @AppStorage("columns.bookmarknot.hashWidth") private var hashWidth = 150.0
-  @AppStorage("columns.bookmarknot.createdWidth") private var createdWidth = 160.0
-  @AppStorage("columns.bookmarknot.countsWidth") private var countsWidth = 140.0
-  @AppStorage("columns.bookmarknot.sizeWidth") private var sizeWidth = 80.0
+  @State private var hashPreviewWidth: Double?
+  @State private var createdPreviewWidth: Double?
+  @State private var countsPreviewWidth: Double?
+  @State private var sizePreviewWidth: Double?
 
   var body: some View {
     TableShell(state: state, isEmpty: artifacts.isEmpty) {
       HStack(spacing: 12) {
-        ResizableHeader(title: "Short Hash", width: $hashWidth)
-        if showCreated { ResizableHeader(title: "Created", width: $createdWidth) }
-        if showCounts { ResizableHeader(title: "Bookmarks / Folders", width: $countsWidth) }
-        if showSize { ResizableHeader(title: "Size", width: $sizeWidth) }
+        ResizableHeader(
+          title: "Short Hash",
+          width: $layout.hashWidth,
+          previewWidth: $hashPreviewWidth
+        )
+        if layout.showCreated {
+          ResizableHeader(
+            title: "Created",
+            width: $layout.createdWidth,
+            previewWidth: $createdPreviewWidth
+          )
+        }
+        if layout.showCounts {
+          ResizableHeader(
+            title: "Bookmarks / Folders",
+            width: $layout.countsWidth,
+            previewWidth: $countsPreviewWidth
+          )
+        }
+        if layout.showSize {
+          ResizableHeader(title: "Size", width: $layout.sizeWidth, previewWidth: $sizePreviewWidth)
+        }
         Menu("Columns") {
-          Toggle("Created", isOn: $showCreated)
-          Toggle("Counts", isOn: $showCounts)
-          Toggle("Size", isOn: $showSize)
+          Toggle(SavedArtifactOptionalColumn.created.rawValue, isOn: $layout.showCreated)
+          Toggle(SavedArtifactOptionalColumn.counts.rawValue, isOn: $layout.showCounts)
+          Toggle(SavedArtifactOptionalColumn.size.rawValue, isOn: $layout.showSize)
         }
         .menuStyle(.borderlessButton)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     } rows: {
       ScrollView {
         LazyVStack(spacing: 0) {
           ForEach(artifacts) { artifact in
-            HStack(spacing: 12) {
-              Text(artifact.shortHash).monospaced().frame(width: hashWidth, alignment: .leading)
-              if showCreated {
-                Text(artifact.createdAt, format: .dateTime)
-                  .frame(width: createdWidth, alignment: .leading)
+            HStack(alignment: .top, spacing: 12) {
+              TableValueCell(width: effectiveHashWidth) {
+                Text(artifact.shortHash)
+                  .font(.system(.body, design: .monospaced))
               }
-              if showCounts {
-                Text("\(artifact.bookmarkCount) / \(artifact.folderCount)")
-                  .frame(width: countsWidth, alignment: .leading)
+              if layout.showCreated {
+                TableValueCell(width: effectiveCreatedWidth) {
+                  Text(artifact.createdAt, format: .dateTime)
+                }
               }
-              if showSize {
-                Text(byteCount(artifact.fileSize)).frame(width: sizeWidth, alignment: .leading)
+              if layout.showCounts {
+                TableValueCell(width: effectiveCountsWidth) {
+                  Text("\(artifact.bookmarkCount) / \(artifact.folderCount)")
+                }
+              }
+              if layout.showSize {
+                TableValueCell(width: effectiveSizeWidth) {
+                  Text(byteCount(artifact.fileSize))
+                }
               }
               Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .frame(height: 28)
+            .frame(
+              minHeight: ConfigurationTablePresentation.savedArtifactRowHeight(
+                artifact: artifact,
+                layout: effectiveLayout
+              ),
+              alignment: .topLeading
+            )
             .background(selection == artifact.id ? Color.accentColor.opacity(0.2) : Color.clear)
             .contentShape(Rectangle())
             .onTapGesture { selection = artifact.id }
@@ -399,6 +485,22 @@ private struct SavedArtifactTable: View {
         }
       }
     }
+  }
+
+  private var effectiveHashWidth: Double { hashPreviewWidth ?? layout.hashWidth }
+  private var effectiveCreatedWidth: Double { createdPreviewWidth ?? layout.createdWidth }
+  private var effectiveCountsWidth: Double { countsPreviewWidth ?? layout.countsWidth }
+  private var effectiveSizeWidth: Double { sizePreviewWidth ?? layout.sizeWidth }
+  private var effectiveLayout: SavedArtifactTableLayout {
+    SavedArtifactTableLayout(
+      showCreated: layout.showCreated,
+      showCounts: layout.showCounts,
+      showSize: layout.showSize,
+      hashWidth: effectiveHashWidth,
+      createdWidth: effectiveCreatedWidth,
+      countsWidth: effectiveCountsWidth,
+      sizeWidth: effectiveSizeWidth
+    )
   }
 }
 
@@ -472,23 +574,49 @@ private struct TablePlaceholder: View {
   }
 }
 
+private struct TableValueCell<Content: View>: View {
+  let width: Double
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    HStack(spacing: 0) {
+      content
+        .fixedSize(horizontal: false, vertical: true)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      Color.clear.frame(width: PanelLayout.resizeHandleWidth)
+    }
+    .frame(width: width, alignment: .topLeading)
+  }
+}
+
 private struct ResizableHeader: View {
   let title: String
   @Binding var width: Double
-  @GestureState private var dragOffset = 0.0
+  @Binding var previewWidth: Double?
 
   var body: some View {
-    Text(title)
-      .frame(width: max(120, width + dragOffset), alignment: .leading)
-      .overlay(alignment: .trailing) {
-        Rectangle().fill(Color.secondary.opacity(0.35)).frame(width: 1, height: 18)
-          .frame(width: 10).contentShape(Rectangle())
-          .gesture(
-            DragGesture(minimumDistance: 1)
-              .updating($dragOffset) { value, state, _ in state = value.translation.width }
-              .onEnded { value in width = max(120, width + value.translation.width) }
-          )
-      }
+    HStack(spacing: 0) {
+      Text(title)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      Rectangle()
+        .fill(Color.secondary.opacity(0.35))
+        .frame(width: 1, height: 18)
+        .frame(width: PanelLayout.resizeHandleWidth)
+        .contentShape(Rectangle())
+        .gesture(
+          DragGesture(minimumDistance: 1)
+            .onChanged { value in
+              previewWidth = max(120, width + value.translation.width)
+            }
+            .onEnded { value in
+              width = max(120, width + value.translation.width)
+              previewWidth = nil
+            }
+        )
+    }
+    .frame(width: previewWidth ?? width, alignment: .leading)
   }
 }
 
@@ -500,10 +628,10 @@ private struct ColumnMenu: View {
 
   var body: some View {
     Menu("Columns") {
-      Toggle("Created", isOn: $showCreated)
-      Toggle("Counts", isOn: $showCounts)
-      Toggle("Size", isOn: $showSize)
-      Toggle("Status", isOn: $showStatus)
+      Toggle(SourceArtifactOptionalColumn.created.rawValue, isOn: $showCreated)
+      Toggle(SourceArtifactOptionalColumn.counts.rawValue, isOn: $showCounts)
+      Toggle(SourceArtifactOptionalColumn.size.rawValue, isOn: $showSize)
+      Toggle(SourceArtifactOptionalColumn.status.rawValue, isOn: $showStatus)
     }
     .menuStyle(.borderlessButton)
   }

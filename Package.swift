@@ -40,6 +40,12 @@ targets.append(
     dependencies: ["Infrastructure"]
   )
 )
+targets.append(
+  .testTarget(
+    name: "UITests",
+    dependencies: ["UI"]
+  )
+)
 
 let package = Package(
   name: "Bookmarknot",
