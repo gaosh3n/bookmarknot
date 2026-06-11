@@ -1,0 +1,51 @@
+name: bookmarknot
+options:
+  xcodeVersion: "16.5"
+  projectFormat: xcode16_0
+  deploymentTarget:
+    macOS: "26.0"
+  defaultSourceDirectoryType: syncedFolder
+  settingPresets: all
+packages:
+  Bookmarknot:
+    path: .
+fileGroups:
+  - Config
+targets:
+  bookmarknot:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/UI
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        INFOPLIST_KEY_CFBundleDisplayName: "$(PRODUCT_DISPLAY_NAME)"
+        SWIFT_VERSION: "6.3"
+    dependencies:
+      - package: Bookmarknot
+        products:
+          - Application
+          - Domain
+          - Infrastructure
+schemes:
+  bookmarknot:
+    build:
+      targets:
+        bookmarknot: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    analyze:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release
+    management:
+      shared: true
+      isShown: true

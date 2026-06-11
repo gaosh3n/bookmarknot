@@ -53,7 +53,10 @@ let package = Package(
     .macOS(.v26)
   ],
   products: [
-    .executable(name: "bookmarknot", targets: ["UI"])
+    .library(name: "Domain", targets: ["Domain"]),
+    .library(name: "Application", targets: ["Application"]),
+    .library(name: "Infrastructure", targets: ["Infrastructure"]),
+    .executable(name: "bookmarknot", targets: ["UI"]),
   ],
   targets: targets
 )

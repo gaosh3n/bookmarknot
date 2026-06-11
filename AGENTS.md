@@ -21,6 +21,10 @@
 - Build the package: `swift build`
 - Run the macOS application: `swift run bookmarknot`
 - Run the non-UI test suite: `swift test`
+- Regenerate the committed Xcode project after changing the Xcode spec: `xcodegen generate`
+- Build the committed Xcode app target for UI automation: `xcodebuild -project bookmarknot.xcodeproj -scheme bookmarknot build`
+- Build the committed Xcode app target with XcodeBuildMCP: `xcodebuildmcp macos build --project-path bookmarknot.xcodeproj --scheme bookmarknot`
+- Discover the full XcodeBuildMCP command surface from the CLI itself: `xcodebuildmcp --help`
 - Prefer one documented command per workflow when possible. If multiple commands are required, document the narrowest verified entrypoint for each task.
 
 ## Workflow
@@ -33,7 +37,7 @@
 ## Testing
 
 - Use `swift test` as the verified automated test entrypoint.
-- Domain tests cover canonical artifacts and generation decisions; Application tests use fake services; Infrastructure tests use isolated temporary directories.
+- Domain tests cover canonical artifacts and generation decisions; Application tests use fake services; Infrastructure tests use isolated temporary directories; UI presentation tests cover configuration-table layout behavior through `swift test`.
 - Do not claim code is tested unless you ran a real command and report the exact command you used.
 - Prefer a single documented test entrypoint over ad hoc per-file commands unless the toolchain makes that impossible.
 
@@ -42,6 +46,9 @@
 ```text
 /
 ├── Package.swift                              # SwiftPM package and dependency boundaries
+├── project.yml                                # XcodeGen spec for the committed Xcode project
+├── bookmarknot.xcodeproj/                     # committed Xcode project for local macOS UI automation
+├── Config/                                    # shared Xcode build configuration for the committed project
 ├── Sources/
 │   ├── UI/                                    # SwiftUI app and presentation
 │   ├── Application/                           # complete user-operation coordination
@@ -50,7 +57,8 @@
 ├── Tests/
 │   ├── ApplicationTests/
 │   ├── DomainTests/
-│   └── InfrastructureTests/
+│   ├── InfrastructureTests/
+│   └── UITests/
 ├── CONTEXT.md                                 # canonical repo language
 └── docs/
     ├── agents/
@@ -68,3 +76,4 @@
 - Do not backfill speculative future architecture into repo docs.
 - If a change adds runnable code, tooling, tests, or agent-facing documentation, update `AGENTS.md` or the linked progressive-disclosure docs in the same change.
 - Prefer small, reversible documentation updates over broad policy language that is not yet enforced by the repo.
+- If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.
