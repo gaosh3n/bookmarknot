@@ -1,8 +1,147 @@
+import Combine
 import Domain
 import Foundation
 import Testing
 
 @testable import Application
+
+@MainActor
+@Test
+func runtimeLogUpdatesAppearWithoutRefreshing() {
+  let services = FakeServices()
+  let model = BookmarknotModel(services: services)
+
+  services.emitRuntimeLogUpdate("[2026-06-11T00:00:00Z] [ERROR] A new runtime failure\n")
+
+  #expect(model.runtimeLogContent == "[2026-06-11T00:00:00Z] [ERROR] A new runtime failure\n")
+}
+
+@MainActor
+@Test
+func runtimeLogCleanFailureStaysInTheLogWithoutShowingADialog() {
+  let services = FakeServices()
+  services.cleanRuntimeLogError = FakeError.cannotCleanRuntimeLog
+  let model = BookmarknotModel(services: services)
+
+  model.cleanRuntimeLog()
+
+  #expect(model.runtimeLogContent.contains("Runtime log clean failed"))
+  #expect(model.dialog == nil)
+}
+
+@MainActor
+@Test
+func bookmarknotRefreshLogsANormalActivityInfoEntry() {
+  let services = FakeServices()
+  let model = BookmarknotModel(services: services)
+
+  model.refresh(.bookmarknot)
+
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .info && $0.message == "Completed Bookmarknot refresh with 0 rows."
+    })
+}
+
+@MainActor
+@Test
+func generationAbortLogsAnInfoEntry() {
+  let services = FakeServices()
+  let model = BookmarknotModel(services: services)
+  model.refresh(.chrome)
+  model.refresh(.bookmarknot)
+
+  model.beginGeneration()
+  model.cancelGeneration()
+  model.cancelGeneration()
+
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .info && $0.message == "Started generation."
+    })
+  #expect(
+    services.loggedEntries.filter {
+      $0.level == .info && $0.message == "Aborted generation."
+    }.count == 1)
+}
+
+@MainActor
+@Test
+func generationCreatedRouteLogsStartAndCompletion() throws {
+  let services = FakeServices()
+  let model = BookmarknotModel(services: services)
+  model.refresh(.chrome)
+  model.refresh(.bookmarknot)
+
+  model.beginGeneration()
+  for decision in try #require(model.generationSession).decisions {
+    model.resolveDecision(decision.id, as: .accepted, recursively: decision.kind == .folder)
+  }
+  model.completeGeneration()
+
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .info && $0.message == "Started generation."
+    })
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .info && $0.message == "Completed generation with artifact hash."
+    })
+}
+
+@MainActor
+@Test
+func generationExistingRouteLogsTheMatchOutcome() throws {
+  let services = FakeServices()
+  services.saveAsExisting = true
+  let model = BookmarknotModel(services: services)
+  model.refresh(.chrome)
+  model.refresh(.bookmarknot)
+
+  model.beginGeneration()
+  for decision in try #require(model.generationSession).decisions {
+    model.resolveDecision(decision.id, as: .accepted, recursively: decision.kind == .folder)
+  }
+  model.completeGeneration()
+
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .info && $0.message == "Generation matched existing artifact hash."
+    })
+}
+
+@MainActor
+@Test
+func generationFailureRouteLogsAnError() {
+  let services = FakeServices()
+  services.sourceArtifactFactory = {
+    SourceArtifact(
+      id: "broken",
+      browser: .chrome,
+      path: "/Chrome/Bookmarks",
+      createdAt: Date(),
+      bookmarkCount: 0,
+      folderCount: 0,
+      fileSize: 1,
+      status: .ready,
+      artifact: try ArtifactCanonicalizer { _ in "identity" }.canonicalize(
+        .folder(title: "", children: [])
+      )
+    )
+  }
+  let model = BookmarknotModel(services: services)
+  model.refresh(.chrome)
+  model.refresh(.bookmarknot)
+
+  model.beginGeneration()
+
+  #expect(model.dialog == .generationAborted)
+  #expect(
+    services.loggedEntries.contains {
+      $0.level == .error
+        && $0.message == "Generation failed: selected sources contain no supported bookmarks."
+    })
+}
 
 @MainActor
 @Test
@@ -103,21 +242,44 @@ func bookmarknotRefreshSelectsTheNewestArtifact() throws {
 }
 
 private enum FakeError: Error {
+  case cannotCleanRuntimeLog
   case cannotRefreshSavedArtifacts
 }
 
 private final class FakeServices: BookmarknotServices {
+  struct LoggedEntry: Equatable {
+    let level: RuntimeLogLevel
+    let message: String
+  }
+
   private let canonicalizer = ArtifactCanonicalizer { _ in "identity" }
+  private let runtimeLogSubject = PassthroughSubject<String, Never>()
+  private var runtimeLogContent = ""
   private var saved: [SavedArtifact] = []
   private var savedArtifactRefreshError: Error?
+  var sourceArtifactFactory: (() throws -> SourceArtifact)?
   var failSavedArtifactRefreshAfterSave = false
   var saveAsExisting = false
+  var cleanRuntimeLogError: Error?
+  var loggedEntries: [LoggedEntry] = []
+
+  var runtimeLogUpdates: AnyPublisher<String, Never> {
+    runtimeLogSubject.eraseToAnyPublisher()
+  }
+
+  func emitRuntimeLogUpdate(_ content: String) {
+    runtimeLogContent = content
+    runtimeLogSubject.send(content)
+  }
 
   func setSavedArtifacts(_ artifacts: [SavedArtifact]) {
     saved = artifacts
   }
 
   func refreshSource(_ browser: BrowserKind) throws -> [SourceArtifact] {
+    if let sourceArtifactFactory {
+      return [try sourceArtifactFactory()]
+    }
     let artifact = try canonicalizer.canonicalize(
       .folder(title: "", children: [.leaf(title: "Example", url: "https://example.com")])
     )
@@ -161,7 +323,14 @@ private final class FakeServices: BookmarknotServices {
     return saveAsExisting ? .existing(result) : .created(result)
   }
 
-  func runtimeLog() -> String { "" }
-  func cleanRuntimeLog() throws {}
-  func log(_ message: String) {}
+  func runtimeLog() -> String { runtimeLogContent }
+  func cleanRuntimeLog() throws {
+    if let cleanRuntimeLogError { throw cleanRuntimeLogError }
+    emitRuntimeLogUpdate("")
+  }
+
+  func log(_ level: RuntimeLogLevel, _ message: String) {
+    loggedEntries.append(LoggedEntry(level: level, message: message))
+    emitRuntimeLogUpdate(runtimeLogContent + "[\(level.rawValue)] " + message + "\n")
+  }
 }

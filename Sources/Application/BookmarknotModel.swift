@@ -88,14 +88,22 @@ public enum ArtifactSaveOutcome: Equatable, Sendable {
   case existing(SavedArtifact)
 }
 
+public enum RuntimeLogLevel: String, Equatable, Sendable {
+  case info = "INFO"
+  case warning = "WARN"
+  case error = "ERROR"
+}
+
 public protocol BookmarknotServices: AnyObject {
+  var runtimeLogUpdates: AnyPublisher<String, Never> { get }
+
   func refreshSource(_ browser: BrowserKind) throws -> [SourceArtifact]
   func refreshSavedArtifacts() throws -> [SavedArtifact]
   func canonicalize(_ root: BookmarkNode) throws -> CanonicalArtifact
   func save(_ artifact: CanonicalArtifact) throws -> ArtifactSaveOutcome
   func runtimeLog() -> String
   func cleanRuntimeLog() throws
-  func log(_ message: String)
+  func log(_ level: RuntimeLogLevel, _ message: String)
 }
 
 public enum UserDialog: String, Identifiable, Sendable {
@@ -122,11 +130,15 @@ public final class BookmarknotModel: ObservableObject {
   @Published public var dialog: UserDialog?
 
   private let services: BookmarknotServices
+  private var runtimeLogObservation: AnyCancellable?
   private var localArtifactsAreValid = false
 
   public init(services: BookmarknotServices) {
     self.services = services
     runtimeLogContent = services.runtimeLog()
+    runtimeLogObservation = services.runtimeLogUpdates.sink { [weak self] content in
+      self?.runtimeLogContent = content
+    }
   }
 
   public var canGenerate: Bool {
@@ -134,6 +146,7 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   public func refresh(_ kind: ArtifactKind) {
+    services.log(.info, "Started \(kind.logName) refresh.")
     switch kind {
     case .chrome: refreshChrome()
     case .safari: refreshSafari()
@@ -144,11 +157,12 @@ public final class BookmarknotModel: ObservableObject {
 
   public func beginGeneration() {
     guard canGenerate else { return }
+    services.log(.info, "Started generation.")
     let current = selectedSafariArtifact?.artifact?.root.bookmarkNode
     let incoming = selectedChromeArtifact?.artifact?.root.bookmarkNode
     let session = GenerationSession(current: current, incoming: incoming)
     guard session.totalCount > 0 || session.hasAcceptedContent else {
-      services.log("Generation failed: selected sources contain no supported bookmarks.")
+      services.log(.error, "Generation failed: selected sources contain no supported bookmarks.")
       runtimeLogContent = services.runtimeLog()
       dialog = .generationAborted
       return
@@ -161,6 +175,8 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   public func cancelGeneration() {
+    guard generationSession != nil else { return }
+    services.log(.info, "Aborted generation.")
     generationSession = nil
   }
 
@@ -174,12 +190,14 @@ public final class BookmarknotModel: ObservableObject {
       switch outcome {
       case .created(let saved):
         selectedBookmarknotID = saved.id
+        services.log(.info, "Completed generation with artifact \(saved.shortHash).")
       case .existing(let saved):
         selectedBookmarknotID = saved.id
+        services.log(.info, "Generation matched existing artifact \(saved.shortHash).")
         dialog = .noChange
       }
     } catch {
-      services.log("Generation failed: \(error)")
+      services.log(.error, "Generation failed: \(error)")
       generationSession = nil
       runtimeLogContent = services.runtimeLog()
       dialog = .generationAborted
@@ -191,7 +209,7 @@ public final class BookmarknotModel: ObservableObject {
       try services.cleanRuntimeLog()
       runtimeLogContent = ""
     } catch {
-      services.log("Runtime log clean failed: \(error)")
+      services.log(.error, "Runtime log clean failed: \(error)")
       runtimeLogContent = services.runtimeLog()
     }
   }
@@ -209,11 +227,12 @@ public final class BookmarknotModel: ObservableObject {
       chromeArtifacts = try services.refreshSource(.chrome)
       chromeState = .loaded
       selectedChromeID = defaultSourceSelection(in: chromeArtifacts)
+      services.log(.info, "Completed Chrome refresh with \(chromeArtifacts.count) rows.")
     } catch {
       chromeArtifacts = []
       chromeState = .loaded
       selectedChromeID = nil
-      services.log("Chrome refresh failed: \(error)")
+      services.log(.error, "Chrome refresh failed: \(error)")
       dialog = .cannotLoad
     }
   }
@@ -223,11 +242,12 @@ public final class BookmarknotModel: ObservableObject {
       safariArtifacts = try services.refreshSource(.safari)
       safariState = .loaded
       selectedSafariID = defaultSourceSelection(in: safariArtifacts)
+      services.log(.info, "Completed Safari refresh with \(safariArtifacts.count) rows.")
     } catch {
       safariArtifacts = []
       safariState = .loaded
       selectedSafariID = nil
-      services.log("Safari refresh failed: \(error)")
+      services.log(.error, "Safari refresh failed: \(error)")
       dialog = .cannotLoad
     }
   }
@@ -239,13 +259,14 @@ public final class BookmarknotModel: ObservableObject {
       bookmarknotState = .loaded
       localArtifactsAreValid = true
       selectedBookmarknotID = bookmarknotArtifacts.first?.id
+      services.log(.info, "Completed Bookmarknot refresh with \(bookmarknotArtifacts.count) rows.")
       return true
     } catch {
       bookmarknotArtifacts = []
       bookmarknotState = .loaded
       selectedBookmarknotID = nil
       localArtifactsAreValid = false
-      services.log("Bookmarknot refresh failed: \(error)")
+      services.log(.error, "Bookmarknot refresh failed: \(error)")
       dialog = .cannotLoad
       return false
     }
@@ -253,5 +274,15 @@ public final class BookmarknotModel: ObservableObject {
 
   private func defaultSourceSelection(in artifacts: [SourceArtifact]) -> SourceArtifact.ID? {
     artifacts.first(where: { $0.status == .ready })?.id ?? artifacts.first?.id
+  }
+}
+
+extension ArtifactKind {
+  fileprivate var logName: String {
+    switch self {
+    case .chrome: "Chrome"
+    case .safari: "Safari"
+    case .bookmarknot: "Bookmarknot"
+    }
   }
 }

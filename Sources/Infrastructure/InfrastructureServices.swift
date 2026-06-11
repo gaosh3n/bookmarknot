@@ -1,4 +1,5 @@
 import Application
+import Combine
 import CryptoKit
 import Domain
 import Foundation
@@ -46,10 +47,19 @@ public final class InfrastructureServices: BookmarknotServices {
   private let fileManager: FileManager
   private let paths: InfrastructurePaths
   private let canonicalizer: ArtifactCanonicalizer
+  private let runtimeLogStore: RuntimeLogStore
+
+  public var runtimeLogUpdates: AnyPublisher<String, Never> {
+    runtimeLogStore.updates
+  }
 
   public init(paths: InfrastructurePaths = .live, fileManager: FileManager = .default) {
     self.paths = paths
     self.fileManager = fileManager
+    runtimeLogStore = RuntimeLogStore(
+      fileManager: fileManager,
+      file: paths.applicationSupport.appending(path: "logs/runtime.log")
+    )
     canonicalizer = ArtifactCanonicalizer(md5: { Self.md5($0) })
   }
 
@@ -60,7 +70,7 @@ public final class InfrastructureServices: BookmarknotServices {
       do {
         rows.append(try importSource(url, browser: browser))
       } catch {
-        log("\(browser.rawValue) import failed for \(url.path): \(error)")
+        log(.warning, "\(browser.rawValue) import failed for \(url.path): \(error)")
         rows.append(failedRow(for: url, browser: browser, error: error))
       }
     }
@@ -69,6 +79,13 @@ public final class InfrastructureServices: BookmarknotServices {
     if !rows.isEmpty && successful.isEmpty {
       try replaceSourceCache(for: browser, rows: rows)
       throw InfrastructureError.allImportsFailed(browser)
+    }
+    if successful.count != rows.count {
+      let failedCount = rows.count - successful.count
+      log(
+        .warning,
+        "\(browser.rawValue) refresh completed with \(successful.count) successful rows and \(failedCount) failed rows."
+      )
     }
     try replaceSourceCache(for: browser, rows: rows)
     return rows
@@ -132,32 +149,22 @@ public final class InfrastructureServices: BookmarknotServices {
   }
 
   public func runtimeLog() -> String {
-    (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+    runtimeLogStore.read()
   }
 
   public func cleanRuntimeLog() throws {
-    try ensureLogDirectory()
-    try Data().write(to: logFile, options: [.atomic])
+    try runtimeLogStore.clean()
   }
 
-  public func log(_ message: String) {
+  public func log(_ level: RuntimeLogLevel, _ message: String) {
     do {
-      try ensureLogDirectory()
-      if !fileManager.fileExists(atPath: logFile.path) {
-        try Data().write(to: logFile)
-      }
-      let handle = try FileHandle(forWritingTo: logFile)
-      defer { try? handle.close() }
-      try handle.seekToEnd()
-      let timestamp = ISO8601DateFormatter().string(from: Date())
-      try handle.write(contentsOf: Data("[\(timestamp)] \(message)\n".utf8))
+      try runtimeLogStore.append(level: level, message: message)
     } catch {
       // Logging must never turn a recoverable app operation into a crash.
     }
   }
 
   private var artifactDirectory: URL { paths.applicationSupport.appending(path: "artifacts") }
-  private var logFile: URL { paths.applicationSupport.appending(path: "logs/runtime.log") }
 
   private func discover(_ browser: BrowserKind) throws -> [URL] {
     switch browser {
@@ -273,13 +280,6 @@ public final class InfrastructureServices: BookmarknotServices {
       folderCount: artifact.folderCount,
       fileSize: Int64(values.fileSize ?? artifact.data.count),
       artifact: artifact
-    )
-  }
-
-  private func ensureLogDirectory() throws {
-    try fileManager.createDirectory(
-      at: logFile.deletingLastPathComponent(),
-      withIntermediateDirectories: true
     )
   }
 

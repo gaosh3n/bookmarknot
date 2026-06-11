@@ -1,9 +1,67 @@
 import Application
+import Combine
 import Domain
 import Foundation
 import Testing
 
 @testable import Infrastructure
+
+@Test
+func appendingRuntimeLogPublishesTheVisibleContentWithALevel() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  let services = InfrastructureServices(paths: fixture.paths)
+  var updates: [String] = []
+  let observation = services.runtimeLogUpdates.sink { updates.append($0) }
+  defer { observation.cancel() }
+
+  services.log(.info, "Started Chrome refresh.")
+
+  #expect(updates.count == 1)
+  #expect(updates[0].contains("[INFO] Started Chrome refresh."))
+  #expect(updates[0] == services.runtimeLog())
+}
+
+@Test
+func cleaningRuntimeLogPublishesEmptyContentAndRetainsTheFile() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  let services = InfrastructureServices(paths: fixture.paths)
+  services.log(.warning, "Failure to remove")
+  let originalHandle = try FileHandle(forReadingFrom: fixture.runtimeLogFile)
+  defer { try? originalHandle.close() }
+  let originalIdentifier = try fixture.fileResourceIdentifier(for: fixture.runtimeLogFile)
+  var updates: [String] = []
+  let observation = services.runtimeLogUpdates.sink { updates.append($0) }
+  defer { observation.cancel() }
+
+  try services.cleanRuntimeLog()
+
+  #expect(updates == [""])
+  #expect(services.runtimeLog().isEmpty)
+  #expect(try fixture.fileResourceIdentifier(for: fixture.runtimeLogFile) == originalIdentifier)
+  #expect(try originalHandle.seekToEnd() == 0)
+  #expect(FileManager.default.fileExists(atPath: fixture.runtimeLogFile.path))
+}
+
+@Test
+func unavailableRuntimeLogStorageIsHandledWithoutCrashingOrPublishingFalseContent() throws {
+  let fixture = try Fixture()
+  defer { fixture.clean() }
+  try fixture.blockApplicationSupportDirectory()
+  let services = InfrastructureServices(paths: fixture.paths)
+  var updates: [String] = []
+  let observation = services.runtimeLogUpdates.sink { updates.append($0) }
+  defer { observation.cancel() }
+
+  #expect(services.runtimeLog().isEmpty)
+  services.log(.error, "Cannot be written")
+  #expect(updates.isEmpty)
+  do {
+    try services.cleanRuntimeLog()
+    Issue.record("Expected cleaning unavailable runtime-log storage to fail")
+  } catch {}
+}
 
 @Test
 func chromeRefreshWritesConvertedCacheAndSavedArtifactsAreContentAddressed() throws {
@@ -130,6 +188,10 @@ private struct Fixture {
     paths.applicationSupport.appending(path: "sources/Chrome/artifact-0.json")
   }
 
+  var runtimeLogFile: URL {
+    paths.applicationSupport.appending(path: "logs/runtime.log")
+  }
+
   func writeChromeBookmarks() throws {
     let profile = paths.chromeRoot.appending(path: "Default")
     try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
@@ -146,6 +208,17 @@ private struct Fixture {
       }
       """
     try Data(json.utf8).write(to: profile.appending(path: "Bookmarks"))
+  }
+
+  func blockApplicationSupportDirectory() throws {
+    try Data("not a directory".utf8).write(to: paths.applicationSupport)
+  }
+
+  func fileResourceIdentifier(for url: URL) throws -> Data {
+    let identifier = try #require(
+      url.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier as? Data
+    )
+    return identifier
   }
 
   func writeInvalidChromeBookmarks() throws {
