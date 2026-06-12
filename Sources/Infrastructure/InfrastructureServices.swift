@@ -248,18 +248,10 @@ public final class InfrastructureServices: BookmarknotServices {
       encoder.dateEncodingStrategy = .iso8601
       let indexData = try encoder.encode(SourceIndex(rows: indexRows))
       try indexData.write(to: temporary.appending(path: "index.json"), options: [.atomic])
-      let backup = sources.appending(path: ".\(browser.rawValue)-backup-\(UUID().uuidString)")
       if fileManager.fileExists(atPath: destination.path) {
-        try fileManager.moveItem(at: destination, to: backup)
-      }
-      do {
+        _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
+      } else {
         try fileManager.moveItem(at: temporary, to: destination)
-        try? fileManager.removeItem(at: backup)
-      } catch {
-        if fileManager.fileExists(atPath: backup.path) {
-          try? fileManager.moveItem(at: backup, to: destination)
-        }
-        throw error
       }
     } catch {
       try? fileManager.removeItem(at: temporary)
@@ -360,10 +352,7 @@ private enum SafariImporter {
         as? [String: Any],
       let children = root["Children"] as? [[String: Any]]
     else { throw InfrastructureError.invalidSafari("root is missing Children") }
-    let imported = try children.compactMap { child -> BookmarkNode? in
-      if let title = child["Title"] as? String, isExcludedRootTitle(title) { return nil }
-      return try parseNode(child)
-    }
+    let imported = try children.compactMap { try parseNode($0, isRootChild: true) }
     return .folder(title: "", children: imported)
   }
 
@@ -371,7 +360,10 @@ private enum SafariImporter {
     title == "BookmarksBar" || title == "BookmarksMenu" || title == "com.apple.ReadingList"
   }
 
-  private static func parseNode(_ object: [String: Any]) throws -> BookmarkNode? {
+  private static func parseNode(
+    _ object: [String: Any],
+    isRootChild: Bool = false
+  ) throws -> BookmarkNode? {
     guard let type = object["WebBookmarkType"] as? String else {
       throw InfrastructureError.invalidSafari("node is missing WebBookmarkType")
     }
@@ -382,7 +374,10 @@ private enum SafariImporter {
       guard let title = object["Title"] as? String,
         let children = object["Children"] as? [[String: Any]]
       else { throw InfrastructureError.invalidSafari("list node is missing Title or Children") }
-      return .folder(title: title, children: try children.compactMap(parseNode))
+      if isRootChild && isExcludedRootTitle(title) {
+        return nil
+      }
+      return .folder(title: title, children: try children.compactMap { try parseNode($0) })
     case "WebBookmarkTypeLeaf":
       guard let url = object["URLString"] as? String,
         let uri = object["URIDictionary"] as? [String: Any],
@@ -396,4 +391,5 @@ private enum SafariImporter {
       throw InfrastructureError.invalidSafari("unknown node type \(type)")
     }
   }
+
 }

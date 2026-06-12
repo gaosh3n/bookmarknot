@@ -2,6 +2,7 @@
 
 import PackageDescription
 
+// swiftlint:disable trailing_comma
 var targets: [Target] = []
 targets.append(.target(name: "Domain"))
 targets.append(
@@ -25,7 +26,7 @@ targets.append(
 targets.append(
   .testTarget(
     name: "ApplicationTests",
-    dependencies: ["Application"]
+    dependencies: ["Application", "Domain"]
   )
 )
 targets.append(
@@ -60,3 +61,4 @@ let package = Package(
   ],
   targets: targets
 )
+// swiftlint:enable trailing_comma
