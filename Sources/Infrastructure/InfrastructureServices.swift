@@ -77,7 +77,7 @@ public final class InfrastructureServices: BookmarknotServices {
     rows.sort { $0.createdAt > $1.createdAt }
     let successful = rows.filter { $0.status == .ready }
     if !rows.isEmpty && successful.isEmpty {
-      try replaceSourceCache(for: browser, rows: rows)
+      try replaceSourceCache(for: browser, rows: [])
       throw InfrastructureError.allImportsFailed(browser)
     }
     if successful.count != rows.count {

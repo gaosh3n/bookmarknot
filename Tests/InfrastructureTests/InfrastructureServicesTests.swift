@@ -222,6 +222,8 @@ func allFailedRefreshReplacesThePreviousConvertedCache() throws {
 
   #expect(FileManager.default.fileExists(atPath: fixture.cacheIndex.path))
   #expect(!FileManager.default.fileExists(atPath: fixture.cachedArtifact.path))
+  let index = try fixture.readChromeIndex()
+  #expect(index.rows.isEmpty)
 }
 
 @Test
@@ -305,6 +307,11 @@ private struct Fixture {
     try Data("not valid JSON".utf8).write(to: bookmarks, options: [.atomic])
   }
 
+  func readChromeIndex() throws -> TestSourceIndex {
+    let data = try Data(contentsOf: cacheIndex)
+    return try JSONDecoder().decode(TestSourceIndex.self, from: data)
+  }
+
   func writeSavedArtifact(named data: Data) throws {
     try writeSavedArtifact(data: data, filenameHash: sha256(data))
   }
@@ -373,4 +380,12 @@ private struct Fixture {
   private func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
+}
+
+private struct TestSourceIndex: Decodable {
+  let rows: [TestSourceIndexRow]
+}
+
+private struct TestSourceIndexRow: Decodable {
+  let id: String
 }
