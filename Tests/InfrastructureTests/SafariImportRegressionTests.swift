@@ -117,6 +117,31 @@ func safariRefreshReplacesTheCacheDirectoryWithTheNewSnapshot() throws {
   )
 }
 
+@Test
+func safariRefreshSkipsRootWrapperFoldersThatOnlyExposeSyncMetadata() throws {
+  let fixture = try SafariImportFixture()
+  defer { fixture.clean() }
+  try fixture.writeRootWrapperBookmarks()
+  let services = InfrastructureServices(paths: fixture.paths)
+
+  let rows = try services.refreshSource(.safari)
+
+  #expect(rows.count == 1)
+  let artifact = try #require(rows[0].artifact)
+  #expect(
+    artifact.root.bookmarkNode
+      == .folder(
+        title: "",
+        children: [
+          .folder(
+            title: "Keep",
+            children: [.leaf(title: "Example", url: "https://example.com")]
+          )
+        ]
+      )
+  )
+}
+
 private struct SafariImportFixture {
   let root: URL
   let paths: InfrastructurePaths
@@ -274,6 +299,39 @@ private struct SafariImportFixture {
             ]
           ],
         ]
+      ]
+    ]
+    try writeSafariBookmarks(plist)
+  }
+
+  func writeRootWrapperBookmarks() throws {
+    let plist: [String: Any] = [
+      "Children": [
+        [
+          "WebBookmarkType": "WebBookmarkTypeProxy",
+          "Title": "History",
+        ],
+        [
+          "WebBookmarkType": "WebBookmarkTypeList",
+          "Title": "BookmarksBar",
+          "Sync": [:],
+        ],
+        [
+          "WebBookmarkType": "WebBookmarkTypeList",
+          "Title": "BookmarksMenu",
+          "Sync": [:],
+        ],
+        [
+          "WebBookmarkType": "WebBookmarkTypeList",
+          "Title": "Keep",
+          "Children": [
+            [
+              "WebBookmarkType": "WebBookmarkTypeLeaf",
+              "URLString": "https://example.com",
+              "URIDictionary": ["title": "Example"],
+            ]
+          ],
+        ],
       ]
     ]
     try writeSafariBookmarks(plist)

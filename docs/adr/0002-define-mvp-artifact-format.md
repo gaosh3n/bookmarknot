@@ -111,7 +111,7 @@ Browser import rules:
 - Chrome imports only `roots.bookmark_bar.children`.
 - Chrome excludes `roots.other`, `roots.synced`, and the `Bookmarks Bar` wrapper itself.
 - Safari excludes `WebBookmarkTypeProxy` nodes.
-- Safari excludes root-level native/system nodes `BookmarksBar`, `BookmarksMenu`, and the native root `com.apple.ReadingList` subtree with all descendants inside that subtree.
+- Safari excludes root-level native/system nodes `BookmarksBar`, `BookmarksMenu`, and the native root `com.apple.ReadingList` subtree with all descendants inside that subtree, even when the wrapper node only carries sync metadata and no `Children` array.
 - Unknown Chrome or Safari node types fail import.
 - Missing required source fields fail import.
 

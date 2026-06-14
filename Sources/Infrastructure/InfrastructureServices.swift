@@ -371,11 +371,14 @@ private enum SafariImporter {
     case "WebBookmarkTypeProxy":
       return nil
     case "WebBookmarkTypeList":
-      guard let title = object["Title"] as? String,
-        let children = object["Children"] as? [[String: Any]]
-      else { throw InfrastructureError.invalidSafari("list node is missing Title or Children") }
+      guard let title = object["Title"] as? String else {
+        throw InfrastructureError.invalidSafari("list node is missing Title or Children")
+      }
       if isRootChild && isExcludedRootTitle(title) {
         return nil
+      }
+      guard let children = object["Children"] as? [[String: Any]] else {
+        throw InfrastructureError.invalidSafari("list node is missing Title or Children")
       }
       return .folder(title: title, children: try children.compactMap { try parseNode($0) })
     case "WebBookmarkTypeLeaf":
