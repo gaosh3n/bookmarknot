@@ -74,6 +74,6 @@
 
 - Do not invent repository facts. If a command, target, directory, workflow, or convention does not exist, say so plainly.
 - Do not backfill speculative future architecture into repo docs.
-- If a change adds runnable code, tooling, tests, or agent-facing documentation, update `AGENTS.md` or the linked progressive-disclosure docs in the same change.
+- If a change adds or changes tooling or agent-facing documentation, update `AGENTS.md` or the linked progressive-disclosure docs in the same change.
 - Prefer small, reversible documentation updates over broad policy language that is not yet enforced by the repo.
 - If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.
