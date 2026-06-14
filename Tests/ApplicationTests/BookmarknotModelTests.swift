@@ -172,7 +172,6 @@ func generationUsesOnlyTheSelectedChromeSource() throws {
   let services = FakeServices()
   let model = BookmarknotModel(services: services)
   model.refresh(.chrome)
-  model.refresh(.safari)
   model.refresh(.bookmarknot)
 
   model.beginGeneration()
@@ -187,17 +186,6 @@ func generationUsesOnlyTheSelectedChromeSource() throws {
 
   session.decisions.first.map { model.resolveDecision($0.id, as: .accepted, recursively: false) }
   #expect(model.generationSession?.isResolved == true)
-}
-
-@MainActor
-@Test
-func generationStaysDisabledWithoutASelectedChromeSource() {
-  let services = FakeServices()
-  let model = BookmarknotModel(services: services)
-  model.refresh(.safari)
-  model.refresh(.bookmarknot)
-
-  #expect(!model.canGenerate)
 }
 
 @MainActor

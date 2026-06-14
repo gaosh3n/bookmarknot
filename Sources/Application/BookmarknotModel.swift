@@ -142,7 +142,7 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   public var canGenerate: Bool {
-    localArtifactsAreValid && selectedChromeArtifact != nil
+    localArtifactsAreValid && (selectedChromeArtifact != nil || selectedSafariArtifact != nil)
   }
 
   public func refresh(_ kind: ArtifactKind) {
@@ -156,11 +156,11 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   public func beginGeneration() {
-    guard canGenerate, let incoming = selectedChromeArtifact?.artifact?.root.bookmarkNode else {
+    guard canGenerate else {
       return
     }
     services.log(.info, "Started generation.")
-    let session = GenerationSession(current: nil, incoming: incoming)
+    let session = generationSessionForSelectedSources()
     guard session.totalCount > 0 || session.hasAcceptedContent else {
       services.log(.error, "Generation failed: selected sources contain no supported bookmarks.")
       runtimeLogContent = services.runtimeLog()
@@ -218,6 +218,10 @@ public final class BookmarknotModel: ObservableObject {
     chromeArtifacts.first { $0.id == selectedChromeID && $0.status == .ready }
   }
 
+  private var selectedSafariArtifact: SourceArtifact? {
+    safariArtifacts.first { $0.id == selectedSafariID && $0.status == .ready }
+  }
+
   private func refreshChrome() {
     do {
       chromeArtifacts = try services.refreshSource(.chrome)
@@ -270,6 +274,25 @@ public final class BookmarknotModel: ObservableObject {
 
   private func defaultSourceSelection(in artifacts: [SourceArtifact]) -> SourceArtifact.ID? {
     artifacts.first(where: { $0.status == .ready })?.id ?? artifacts.first?.id
+  }
+
+  private func generationSessionForSelectedSources() -> GenerationSession {
+    let selectedSafari = selectedSafariArtifact?.artifact?.root.bookmarkNode
+    let selectedChrome = selectedChromeArtifact?.artifact?.root.bookmarkNode
+
+    if let selectedSafari, let selectedChrome {
+      return GenerationSession(current: selectedSafari, incoming: selectedChrome)
+    }
+
+    if let selectedSafari {
+      return GenerationSession(current: nil, incoming: selectedSafari)
+    }
+
+    if let selectedChrome {
+      return GenerationSession(current: nil, incoming: selectedChrome)
+    }
+
+    return GenerationSession(current: nil, incoming: nil)
   }
 }
 
