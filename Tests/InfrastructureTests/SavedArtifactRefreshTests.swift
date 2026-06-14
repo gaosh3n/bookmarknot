@@ -26,6 +26,41 @@ func savedArtifactsAreReturnedNewestFirst() throws {
 }
 
 @Test
+func savingAnExistingArtifactLeavesTheFileUntouched() throws {
+  let fixture = try SavedArtifactFixture()
+  defer { fixture.clean() }
+  let services = InfrastructureServices(paths: fixture.paths)
+  let artifact = try services.canonicalize(
+    .folder(title: "", children: [.leaf(title: "Example", url: "https://example.com")])
+  )
+
+  let created = try services.save(artifact)
+  guard case .created(let saved) = created else {
+    Issue.record("Expected the first save to create the artifact")
+    return
+  }
+  let url = fixture.paths.applicationSupport.appending(path: "artifacts/\(saved.hash).json")
+  let beforeValues = try url.resourceValues(
+    forKeys: [.creationDateKey, .contentModificationDateKey]
+  )
+  let beforeData = try Data(contentsOf: url)
+
+  let existing = try services.save(artifact)
+
+  guard case .existing(let matched) = existing else {
+    Issue.record("Expected the second save to reuse the artifact")
+    return
+  }
+  let afterValues = try url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+  let afterData = try Data(contentsOf: url)
+
+  #expect(matched.hash == saved.hash)
+  #expect(afterData == beforeData)
+  #expect(afterValues.creationDate == beforeValues.creationDate)
+  #expect(afterValues.contentModificationDate == beforeValues.contentModificationDate)
+}
+
+@Test
 func unreadableSavedArtifactDirectoryFailsRefresh() throws {
   let fixture = try SavedArtifactFixture()
   defer { fixture.clean() }
