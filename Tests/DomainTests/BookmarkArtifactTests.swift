@@ -94,6 +94,39 @@ func generationResolvesFoldersRecursivelyAndPreventsSameURLFromBothSides() {
 }
 
 @Test
+func generationAllowsDescendantOverridesAfterARecursiveFolderDecision() throws {
+  let current = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "Folder",
+        children: [
+          .folder(
+            title: "Nested",
+            children: [.leaf(title: "Leaf", url: "https://example.com")]
+          )
+        ]
+      )
+    ]
+  )
+  var session = GenerationSession(current: current, incoming: nil)
+  let folder = try #require(session.decisions.first(where: { $0.kind == .folder }))
+  let nested = try #require(session.decisions.first(where: { $0.title == "Nested" }))
+  let leaf = try #require(session.decisions.first(where: { $0.title == "Leaf" }))
+
+  session.resolve(folder.id, as: .accepted, recursively: true)
+  #expect(session.resolvedCount == session.totalCount)
+  #expect(session.decisions.first { $0.id == nested.id }?.state == .accepted)
+  #expect(session.decisions.first { $0.id == leaf.id }?.state == .accepted)
+
+  session.resolve(nested.id, as: .rejected)
+
+  #expect(session.decisions.first { $0.id == nested.id }?.state == .rejected)
+  #expect(session.decisions.first { $0.id == leaf.id }?.state == .accepted)
+  #expect(session.resolvedCount == session.totalCount)
+}
+
+@Test
 func generationDoesNotRequireDecisionsForUnchangedContent() {
   let shared = BookmarkNode.folder(
     title: "",
@@ -111,6 +144,22 @@ func generationDoesNotRequireDecisionsForUnchangedContent() {
   #expect(session.isResolved)
   #expect(session.hasAcceptedContent)
   #expect(session.resolvedRoot() == shared)
+}
+
+@Test
+func generationReportsNoAcceptedContentWhenTheOnlySourceIsRejected() throws {
+  let incoming = BookmarkNode.folder(
+    title: "",
+    children: [.leaf(title: "Example", url: "https://example.com")]
+  )
+  var session = GenerationSession(current: nil, incoming: incoming)
+  let decision = try #require(session.decisions.first)
+
+  session.resolve(decision.id, as: .rejected)
+
+  #expect(session.isResolved)
+  #expect(!session.hasAcceptedContent)
+  #expect(session.resolvedRoot() == nil)
 }
 
 @Test

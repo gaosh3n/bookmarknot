@@ -684,27 +684,22 @@ private struct GenerationWizard: View {
     .padding(20)
     .interactiveDismissDisabled()
     .alert(
-      "Abort generation? Unresolved progress will be lost and no artifact will be saved.",
+      GenerationWizardPresentation.abortConfirmationMessage,
       isPresented: $confirmAbort
     ) {
-      Button("Continue Generation", role: .cancel) {}
-      Button("Abort", role: .destructive) { model.cancelGeneration() }
+      Button(GenerationWizardPresentation.continueGenerationLabel, role: .cancel) {}
+      Button(GenerationWizardPresentation.abortLabel, role: .destructive) {
+        model.cancelGeneration()
+      }
     }
   }
 
   private var visibleDecisions: [DecisionOccurrence] {
     guard let decisions = model.generationSession?.decisions else { return [] }
-    return decisions.filter { decision in
-      guard decision.path.count > 1 else { return true }
-      for length in 1..<decision.path.count {
-        let parentPath = Array(decision.path.prefix(length))
-        let parent = decisions.first {
-          $0.side == decision.side && $0.path == parentPath && $0.kind == .folder
-        }
-        if let parent, !expandedFolders.contains(parent.id) { return false }
-      }
-      return true
-    }
+    return GenerationWizardPresentation.visibleDecisions(
+      from: decisions,
+      expandedFolderIDs: expandedFolders
+    )
   }
 
   private func toggleExpanded(_ id: String) {

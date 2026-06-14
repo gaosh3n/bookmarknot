@@ -142,7 +142,7 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   public var canGenerate: Bool {
-    localArtifactsAreValid && (selectedChromeArtifact != nil || selectedSafariArtifact != nil)
+    localArtifactsAreValid && selectedChromeArtifact != nil
   }
 
   public func refresh(_ kind: ArtifactKind) {
@@ -156,11 +156,11 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   public func beginGeneration() {
-    guard canGenerate else { return }
+    guard canGenerate, let incoming = selectedChromeArtifact?.artifact?.root.bookmarkNode else {
+      return
+    }
     services.log(.info, "Started generation.")
-    let current = selectedSafariArtifact?.artifact?.root.bookmarkNode
-    let incoming = selectedChromeArtifact?.artifact?.root.bookmarkNode
-    let session = GenerationSession(current: current, incoming: incoming)
+    let session = GenerationSession(current: nil, incoming: incoming)
     guard session.totalCount > 0 || session.hasAcceptedContent else {
       services.log(.error, "Generation failed: selected sources contain no supported bookmarks.")
       runtimeLogContent = services.runtimeLog()
@@ -216,10 +216,6 @@ public final class BookmarknotModel: ObservableObject {
 
   private var selectedChromeArtifact: SourceArtifact? {
     chromeArtifacts.first { $0.id == selectedChromeID && $0.status == .ready }
-  }
-
-  private var selectedSafariArtifact: SourceArtifact? {
-    safariArtifacts.first { $0.id == selectedSafariID && $0.status == .ready }
   }
 
   private func refreshChrome() {

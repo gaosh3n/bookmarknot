@@ -163,11 +163,12 @@ func generationRequiresValidLocalStateAndAUsableSelectedSource() throws {
   #expect(model.generationSession == nil)
   #expect(model.bookmarknotArtifacts.count == 1)
   #expect(model.selectedBookmarknotID == model.bookmarknotArtifacts.first?.id)
+  #expect(model.dialog == nil)
 }
 
 @MainActor
 @Test
-func generationAllowsSharedContentWithoutExplicitDecisions() throws {
+func generationUsesOnlyTheSelectedChromeSource() throws {
   let services = FakeServices()
   let model = BookmarknotModel(services: services)
   model.refresh(.chrome)
@@ -177,13 +178,26 @@ func generationAllowsSharedContentWithoutExplicitDecisions() throws {
   model.beginGeneration()
 
   let session = try #require(model.generationSession)
-  #expect(session.decisions.isEmpty)
-  #expect(session.isResolved)
-  #expect(session.hasAcceptedContent)
+  #expect(session.current == nil)
+  #expect(session.incoming != nil)
+  #expect(session.decisions.count == 1)
+  #expect(session.decisions.first?.side == .incoming)
+  #expect(session.decisions.first?.title == "Example")
+  #expect(!session.isResolved)
 
-  model.completeGeneration()
+  session.decisions.first.map { model.resolveDecision($0.id, as: .accepted, recursively: false) }
+  #expect(model.generationSession?.isResolved == true)
+}
 
-  #expect(model.bookmarknotArtifacts.count == 1)
+@MainActor
+@Test
+func generationStaysDisabledWithoutASelectedChromeSource() {
+  let services = FakeServices()
+  let model = BookmarknotModel(services: services)
+  model.refresh(.safari)
+  model.refresh(.bookmarknot)
+
+  #expect(!model.canGenerate)
 }
 
 @MainActor
@@ -284,7 +298,7 @@ private enum FakeError: Error {
   case cannotRefreshSavedArtifacts
 }
 
-private final class FakeServices: BookmarknotServices {
+final class FakeServices: BookmarknotServices {
   struct LoggedEntry: Equatable {
     let level: RuntimeLogLevel
     let message: String
@@ -299,6 +313,7 @@ private final class FakeServices: BookmarknotServices {
   var failSavedArtifactRefreshAfterSave = false
   var saveAsExisting = false
   var cleanRuntimeLogError: Error?
+  var saveCallCount = 0
   var loggedEntries: [LoggedEntry] = []
 
   var runtimeLogUpdates: AnyPublisher<String, Never> {
@@ -350,6 +365,7 @@ private final class FakeServices: BookmarknotServices {
   }
 
   func save(_ artifact: CanonicalArtifact) throws -> ArtifactSaveOutcome {
+    saveCallCount += 1
     let result = SavedArtifact(
       hash: "hash",
       createdAt: Date(),
