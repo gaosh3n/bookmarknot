@@ -190,13 +190,27 @@ func generationUsesOnlyTheSelectedChromeSource() throws {
 
 @MainActor
 @Test
-func failedPostSaveRefreshKeepsTheLoadErrorAndClearsSelection() throws {
+func failedPostSaveRefreshKeepsTheLastValidBookmarknotHistoryAndAbortsGeneration() throws {
   let services = FakeServices()
   services.failSavedArtifactRefreshAfterSave = true
   services.saveAsExisting = true
+  let seededArtifact = try services.canonicalize(
+    .folder(title: "", children: [.leaf(title: "Existing", url: "https://existing.example")])
+  )
+  let existing = SavedArtifact(
+    hash: "existing",
+    createdAt: Date(timeIntervalSince1970: 1),
+    bookmarkCount: 1,
+    folderCount: 0,
+    fileSize: Int64(seededArtifact.data.count),
+    artifact: seededArtifact
+  )
+  services.setSavedArtifacts([existing])
   let model = BookmarknotModel(services: services)
   model.refresh(.chrome)
   model.refresh(.bookmarknot)
+  let previousArtifacts = model.bookmarknotArtifacts
+  let previousSelection = model.selectedBookmarknotID
   model.beginGeneration()
   for decision in try #require(model.generationSession).decisions {
     model.resolveDecision(decision.id, as: .accepted, recursively: decision.kind == .folder)
@@ -205,9 +219,11 @@ func failedPostSaveRefreshKeepsTheLoadErrorAndClearsSelection() throws {
   model.completeGeneration()
 
   #expect(model.generationSession == nil)
-  #expect(model.bookmarknotArtifacts.isEmpty)
-  #expect(model.selectedBookmarknotID == nil)
-  #expect(model.dialog == .cannotLoad)
+  #expect(model.bookmarknotArtifacts == previousArtifacts)
+  #expect(model.selectedBookmarknotID == previousSelection)
+  #expect(model.dialog == .generationAborted)
+  #expect(
+    model.runtimeLogContent.contains("Refresh saved artifacts failed: cannotRefreshSavedArtifacts"))
 }
 
 @MainActor

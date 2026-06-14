@@ -186,7 +186,16 @@ public final class BookmarknotModel: ObservableObject {
       let artifact = try services.canonicalize(root)
       let outcome = try services.save(artifact)
       generationSession = nil
-      guard refreshBookmarknot() else { return }
+      guard
+        refreshBookmarknot(
+          preservingCurrentStateOnFailure: true,
+          failureLogPrefix: "Refresh saved artifacts"
+        )
+      else {
+        dialog = .generationAborted
+        runtimeLogContent = services.runtimeLog()
+        return
+      }
       switch outcome {
       case .created(let saved):
         selectedBookmarknotID = saved.id
@@ -253,7 +262,11 @@ public final class BookmarknotModel: ObservableObject {
   }
 
   @discardableResult
-  private func refreshBookmarknot() -> Bool {
+  private func refreshBookmarknot(
+    preservingCurrentStateOnFailure: Bool = false,
+    failureLogPrefix: String = "Bookmarknot refresh"
+  ) -> Bool {
+    let snapshot = preservingCurrentStateOnFailure ? bookmarknotStateSnapshot() : nil
     do {
       bookmarknotArtifacts = try services.refreshSavedArtifacts()
       bookmarknotState = .loaded
@@ -262,14 +275,38 @@ public final class BookmarknotModel: ObservableObject {
       services.log(.info, "Completed Bookmarknot refresh with \(bookmarknotArtifacts.count) rows.")
       return true
     } catch {
-      bookmarknotArtifacts = []
-      bookmarknotState = .loaded
-      selectedBookmarknotID = nil
-      localArtifactsAreValid = false
-      services.log(.error, "Bookmarknot refresh failed: \(error)")
-      dialog = .cannotLoad
+      if let snapshot {
+        restoreBookmarknotState(snapshot)
+      } else {
+        clearBookmarknotState()
+        dialog = .cannotLoad
+      }
+      services.log(.error, "\(failureLogPrefix) failed: \(error)")
       return false
     }
+  }
+
+  private func bookmarknotStateSnapshot() -> BookmarknotStateSnapshot {
+    BookmarknotStateSnapshot(
+      artifacts: bookmarknotArtifacts,
+      selectedID: selectedBookmarknotID,
+      state: bookmarknotState,
+      isValid: localArtifactsAreValid
+    )
+  }
+
+  private func restoreBookmarknotState(_ snapshot: BookmarknotStateSnapshot) {
+    bookmarknotArtifacts = snapshot.artifacts
+    selectedBookmarknotID = snapshot.selectedID
+    bookmarknotState = snapshot.state
+    localArtifactsAreValid = snapshot.isValid
+  }
+
+  private func clearBookmarknotState() {
+    bookmarknotArtifacts = []
+    bookmarknotState = .loaded
+    selectedBookmarknotID = nil
+    localArtifactsAreValid = false
   }
 
   private func defaultSourceSelection(in artifacts: [SourceArtifact]) -> SourceArtifact.ID? {
@@ -294,6 +331,13 @@ public final class BookmarknotModel: ObservableObject {
 
     return GenerationSession(current: nil, incoming: nil)
   }
+}
+
+private struct BookmarknotStateSnapshot {
+  let artifacts: [SavedArtifact]
+  let selectedID: SavedArtifact.ID?
+  let state: ArtifactListState
+  let isValid: Bool
 }
 
 extension ArtifactKind {
