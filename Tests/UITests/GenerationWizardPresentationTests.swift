@@ -47,6 +47,14 @@ func generationWizardStartsCollapsedAndExpandsDescendantsOneFolderAtATime() thro
 }
 
 @Test
+func generationWizardUsesCurrentAndIncomingPresentationRoles() {
+  #expect(GenerationWizardPresentation.sideLabel(for: .current) == "Current")
+  #expect(GenerationWizardPresentation.sideLabel(for: .incoming) == "Incoming")
+  #expect(GenerationWizardPresentation.tone(for: .current) == .current)
+  #expect(GenerationWizardPresentation.tone(for: .incoming) == .incoming)
+}
+
+@Test
 func generationWizardUsesTheSpecifiedAbortConfirmationCopy() {
   #expect(
     GenerationWizardPresentation.abortConfirmationMessage

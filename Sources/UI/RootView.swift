@@ -741,8 +741,8 @@ private struct DecisionRow: View {
         }
       }
       Spacer()
-      Text(decision.side == .current ? "Current" : "Incoming")
-        .foregroundStyle(decision.side == .current ? .red : .green)
+      Text(GenerationWizardPresentation.sideLabel(for: decision.side))
+        .foregroundStyle(sideColor)
       Button("Accept") { resolve(.accepted) }
         .buttonStyle(.borderedProminent)
         .tint(.green)
@@ -755,7 +755,12 @@ private struct DecisionRow: View {
     .background(sideColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
   }
 
-  private var sideColor: Color { decision.side == .current ? .red : .green }
+  private var sideColor: Color {
+    switch GenerationWizardPresentation.tone(for: decision.side) {
+    case .current: .red
+    case .incoming: .green
+    }
+  }
 
   private var stateIcon: String {
     switch decision.state {

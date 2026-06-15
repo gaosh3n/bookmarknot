@@ -1,10 +1,29 @@
 import Domain
 
+enum GenerationTone: Equatable {
+  case current
+  case incoming
+}
+
 enum GenerationWizardPresentation {
   static let abortConfirmationMessage =
     "Abort generation? Unresolved progress will be lost and no artifact will be saved."
   static let continueGenerationLabel = "Continue Generation"
   static let abortLabel = "Abort"
+
+  static func sideLabel(for side: GenerationSide) -> String {
+    switch side {
+    case .current: "Current"
+    case .incoming: "Incoming"
+    }
+  }
+
+  static func tone(for side: GenerationSide) -> GenerationTone {
+    switch side {
+    case .current: .current
+    case .incoming: .incoming
+    }
+  }
 
   static func visibleDecisions(
     from decisions: [DecisionOccurrence],
