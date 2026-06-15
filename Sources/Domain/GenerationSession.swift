@@ -252,8 +252,10 @@ public struct GenerationSession: Equatable, Sendable {
       }
       guard lhsChildren.count == rhsChildren.count else { return false }
       return zip(lhsChildren, rhsChildren).allSatisfy(equivalent)
-    case (.leaf(let lhsTitle, let lhsURL), .leaf(let rhsTitle, let rhsURL)):
-      return lhsTitle == rhsTitle && lhsURL == rhsURL
+    case (.leaf, .leaf):
+      // Same-identity leaves must remain explicit user decisions so mixed-source
+      // generation can keep current, keep incoming, or reject both.
+      return false
     default:
       return false
     }

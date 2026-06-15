@@ -77,7 +77,7 @@ func mixedSourceGenerationTracksHiddenProgressAndCancelsWithoutSaving() throws {
 
   model.resolveDecision(currentFolder.id, as: .accepted, recursively: true)
   #expect(model.generationSession?.resolvedCount == 2)
-  #expect(model.generationSession?.totalCount == 6)
+  #expect(model.generationSession?.totalCount == 8)
 
   model.resolveDecision(incomingLeaf.id, as: .accepted, recursively: false)
   #expect(model.generationSession?.resolvedCount == 3)
@@ -191,23 +191,27 @@ private enum MixedSourceGenerationError: Error {
 ) throws {
   let currentFolder = try #require(decisions.first(where: { $0.title == "Current Folder" }))
   let currentLeaf = try #require(decisions.first(where: { $0.title == "Current Leaf" }))
+  let currentShared = try #require(
+    decisions.first(where: { $0.side == .current && $0.title == "Shared" })
+  )
   let incomingFolder = try #require(decisions.first(where: { $0.title == "Incoming Folder" }))
   let incomingLeaf = try #require(decisions.first(where: { $0.title == "Incoming Leaf" }))
+  let incomingShared = try #require(
+    decisions.first(where: { $0.side == .incoming && $0.title == "Shared" })
+  )
   model.resolveDecision(currentFolder.id, as: .accepted, recursively: true)
   model.resolveDecision(currentLeaf.id, as: .rejected, recursively: false)
+  model.resolveDecision(currentShared.id, as: .accepted, recursively: false)
   model.resolveDecision(incomingFolder.id, as: .accepted, recursively: true)
   model.resolveDecision(incomingLeaf.id, as: .accepted, recursively: false)
+  model.resolveDecision(incomingShared.id, as: .rejected, recursively: false)
 }
 
 private func mixedSourceDecisionTitles() -> [String] {
   [
-    "Current Folder",
-    "Current Child",
-    "Current Leaf",
-    "Incoming Folder",
-    "Incoming Child",
+    "Current Folder", "Current Child", "Current Leaf", "Shared", "Incoming Folder",
     // swiftlint:disable:next trailing_comma
-    "Incoming Leaf",
+    "Incoming Child", "Incoming Leaf", "Shared",
   ]
 }
 

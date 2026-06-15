@@ -131,10 +131,7 @@ func generationDoesNotRequireDecisionsForUnchangedContent() {
   let shared = BookmarkNode.folder(
     title: "",
     children: [
-      .folder(
-        title: "Shared",
-        children: [.leaf(title: "Example", url: "https://example.com")]
-      )
+      .folder(title: "Shared", children: [])
     ]
   )
 
@@ -144,6 +141,75 @@ func generationDoesNotRequireDecisionsForUnchangedContent() {
   #expect(session.isResolved)
   #expect(session.hasAcceptedContent)
   #expect(session.resolvedRoot() == shared)
+}
+
+@Test
+func generationTreatsSameURLLeafDuplicatesAsAConflictEvenWhenTheirContentMatches() throws {
+  let shared = BookmarkNode.folder(
+    title: "",
+    children: [.leaf(title: "Example", url: "https://example.com")]
+  )
+
+  var session = GenerationSession(current: shared, incoming: shared)
+
+  #expect(session.decisions.map(\.title) == ["Example", "Example"])
+  #expect(session.decisions.map(\.side) == [.current, .incoming])
+  #expect(!session.hasAcceptedContent)
+
+  let currentDecision = try #require(session.decisions.first(where: { $0.side == .current }))
+  let incomingDecision = try #require(session.decisions.first(where: { $0.side == .incoming }))
+  session.resolve(currentDecision.id, as: .rejected)
+  session.resolve(incomingDecision.id, as: .rejected)
+
+  #expect(session.isResolved)
+  #expect(!session.hasAcceptedContent)
+  #expect(session.resolvedRoot() == nil)
+}
+
+@Test
+func generationTreatsMinimallyNormalizedSameURLLeavesAsOneConflictIdentity() throws {
+  let current = BookmarkNode.folder(
+    title: "",
+    children: [.leaf(title: "Current", url: "HTTPS://Example.COM:443/path")]
+  )
+  let incoming = BookmarkNode.folder(
+    title: "",
+    children: [.leaf(title: "Incoming", url: "https://example.com/path")]
+  )
+
+  var session = GenerationSession(current: current, incoming: incoming)
+
+  #expect(session.decisions.map(\.title) == ["Current", "Incoming"])
+
+  let currentDecision = try #require(session.decisions.first(where: { $0.side == .current }))
+  let incomingDecision = try #require(session.decisions.first(where: { $0.side == .incoming }))
+
+  session.resolve(incomingDecision.id, as: .accepted)
+
+  #expect(session.decisions.first(where: { $0.id == currentDecision.id })?.state == .rejected)
+  #expect(session.resolvedRoot() == incoming)
+}
+
+@Test
+func generationAllowsKeepingIncomingOnlyForASameURLConflict() throws {
+  let current = BookmarkNode.folder(
+    title: "",
+    children: [.leaf(title: "Current", url: "https://example.com/path")]
+  )
+  let incoming = BookmarkNode.folder(
+    title: "",
+    children: [.leaf(title: "Incoming", url: "HTTPS://EXAMPLE.COM:443/path")]
+  )
+
+  var session = GenerationSession(current: current, incoming: incoming)
+
+  let currentDecision = try #require(session.decisions.first(where: { $0.side == .current }))
+  let incomingDecision = try #require(session.decisions.first(where: { $0.side == .incoming }))
+  session.resolve(currentDecision.id, as: .rejected)
+  session.resolve(incomingDecision.id, as: .accepted)
+
+  #expect(session.isResolved)
+  #expect(session.resolvedRoot() == incoming)
 }
 
 @Test
@@ -163,7 +229,7 @@ func generationReportsNoAcceptedContentWhenTheOnlySourceIsRejected() throws {
 }
 
 @Test
-func generationCreatesDecisionsOnlyForChangedOccurrences() throws {
+func generationCreatesDecisionsForChangedOccurrencesAndSameURLLeafConflicts() throws {
   let shared = BookmarkNode.leaf(title: "Shared", url: "https://shared.example")
   let currentOnly = BookmarkNode.leaf(title: "Current", url: "https://current.example")
   let incomingOnly = BookmarkNode.leaf(title: "Incoming", url: "https://incoming.example")
@@ -171,15 +237,23 @@ func generationCreatesDecisionsOnlyForChangedOccurrences() throws {
   let incoming = BookmarkNode.folder(title: "", children: [shared, incomingOnly])
   var session = GenerationSession(current: current, incoming: incoming)
 
-  #expect(session.decisions.map(\.title) == ["Current", "Incoming"])
+  #expect(session.decisions.map(\.title) == ["Shared", "Current", "Shared", "Incoming"])
 
+  let sharedCurrentDecision = try #require(
+    session.decisions.first { $0.side == .current && $0.title == "Shared" }
+  )
   let currentDecision = try #require(
     session.decisions.first { $0.side == .current && $0.title == "Current" }
+  )
+  let sharedIncomingDecision = try #require(
+    session.decisions.first { $0.side == .incoming && $0.title == "Shared" }
   )
   let incomingDecision = try #require(
     session.decisions.first { $0.side == .incoming && $0.title == "Incoming" }
   )
+  session.resolve(sharedCurrentDecision.id, as: .accepted)
   session.resolve(currentDecision.id, as: .accepted)
+  session.resolve(sharedIncomingDecision.id, as: .rejected)
   session.resolve(incomingDecision.id, as: .rejected)
 
   #expect(
