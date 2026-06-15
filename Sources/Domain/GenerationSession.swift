@@ -47,22 +47,25 @@ public struct DecisionOccurrence: Identifiable, Equatable, Sendable {
   }
 }
 
-private struct GenerationPlan {
+struct GenerationPlan {
   var decisionIDs = Set<String>()
   var includedIDs = Set<String>()
+  var counterpartDecisionIDs: [String: String] = [:]
 }
 
 public struct GenerationSession: Equatable, Sendable {
   public let current: BookmarkNode?
   public let incoming: BookmarkNode?
   public private(set) var decisions: [DecisionOccurrence]
-  private let automaticallyIncludedIDs: Set<String>
+  let automaticallyIncludedIDs: Set<String>
+  private let counterpartDecisionIDs: [String: String]
 
   public init(current: BookmarkNode?, incoming: BookmarkNode?) {
     self.current = current
     self.incoming = incoming
     let plan = Self.classify(current: current, incoming: incoming)
     automaticallyIncludedIDs = plan.includedIDs
+    counterpartDecisionIDs = plan.counterpartDecisionIDs
     var occurrences: [DecisionOccurrence] = []
     if let current { Self.appendOccurrences(from: current, side: .current, to: &occurrences) }
     if let incoming { Self.appendOccurrences(from: incoming, side: .incoming, to: &occurrences) }
@@ -97,7 +100,7 @@ public struct GenerationSession: Equatable, Sendable {
     var children: [BookmarkNode] = []
     if let current { children.append(contentsOf: filteredChildren(of: current, side: .current)) }
     if let incoming { children.append(contentsOf: filteredChildren(of: incoming, side: .incoming)) }
-    return .folder(title: "", children: children)
+    return .folder(title: "", children: mergeResolvedChildren(children))
   }
 
   private mutating func rejectCompetingURL(_ url: String, except acceptedID: String) {
@@ -131,6 +134,12 @@ public struct GenerationSession: Equatable, Sendable {
       }
       if decision.state == .accepted || !acceptedChildren.isEmpty {
         return .folder(title: title, children: acceptedChildren)
+      }
+      let shouldPreserveStructuralFolder =
+        decision.state == .rejected
+        && counterpartDecisionIDs[id].map { subtreeHasResolvedContent(in: self, for: $0) } == true
+      if shouldPreserveStructuralFolder {
+        return .folder(title: title, children: [])
       }
       return nil
     }
@@ -208,6 +217,7 @@ public struct GenerationSession: Equatable, Sendable {
 
       plan.decisionIDs.insert(id(side: .current, path: currentPath))
       plan.decisionIDs.insert(id(side: .incoming, path: incomingPath))
+      recordCounterparts(currentPath: currentPath, incomingPath: incomingPath, plan: &plan)
       if case .folder(_, let currentDescendants) = currentNode {
         if case .folder(_, let incomingDescendants) = incomingNode {
           classifyChildren(
@@ -250,8 +260,7 @@ public struct GenerationSession: Equatable, Sendable {
       guard BookmarkNormalization.text(lhsTitle) == BookmarkNormalization.text(rhsTitle) else {
         return false
       }
-      guard lhsChildren.count == rhsChildren.count else { return false }
-      return zip(lhsChildren, rhsChildren).allSatisfy(equivalent)
+      return normalizedChildTreesMatch(lhsChildren, rhsChildren)
     case (.leaf, .leaf):
       // Same-identity leaves must remain explicit user decisions so mixed-source
       // generation can keep current, keep incoming, or reject both.
@@ -305,7 +314,7 @@ public struct GenerationSession: Equatable, Sendable {
     }
   }
 
-  private static func id(side: GenerationSide, path: [Int]) -> String {
+  static func id(side: GenerationSide, path: [Int]) -> String {
     side.rawValue + ":" + path.map(String.init).joined(separator: ".")
   }
 }

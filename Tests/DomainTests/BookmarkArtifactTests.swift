@@ -213,6 +213,121 @@ func generationAllowsKeepingIncomingOnlyForASameURLConflict() throws {
 }
 
 @Test
+func generationPreservesCurrentFolderCasingForAcceptedDescendantsAfterRejectingBothFolderCandidates()
+  throws {
+  let current = BookmarkNode.folder(
+    title: "",
+    children: [.folder(title: "Shared Folder", children: [])]
+  )
+  let incoming = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "shared folder",
+        children: [.leaf(title: "Incoming Leaf", url: "https://incoming.example")]
+      )
+    ]
+  )
+
+  var session = GenerationSession(current: current, incoming: incoming)
+
+  let currentFolder = try #require(
+    session.decisions.first(where: { $0.side == .current && $0.kind == .folder })
+  )
+  let incomingFolder = try #require(
+    session.decisions.first(where: { $0.side == .incoming && $0.kind == .folder })
+  )
+  let incomingLeaf = try #require(
+    session.decisions.first(where: { $0.side == .incoming && $0.kind == .leaf })
+  )
+
+  session.resolve(currentFolder.id, as: .rejected)
+  session.resolve(incomingFolder.id, as: .rejected)
+  session.resolve(incomingLeaf.id, as: .accepted)
+
+  #expect(session.isResolved)
+  #expect(
+    session.resolvedRoot()
+      == .folder(
+        title: "",
+        children: [
+          .folder(
+            title: "Shared Folder",
+            children: [.leaf(title: "Incoming Leaf", url: "https://incoming.example")]
+          )
+        ])
+  )
+}
+
+@Test
+func generationIgnoresFolderConflictsWhenNormalizedChildTreesOnlyDifferByOrder() {
+  let current = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "Shared Folder",
+        children: [
+          .folder(title: "Alpha", children: []),
+          .folder(title: "Beta", children: [])
+        ]
+      )
+    ]
+  )
+  let incoming = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "shared folder",
+        children: [
+          .folder(title: "Beta", children: []),
+          .folder(title: "Alpha", children: [])
+        ]
+      )
+    ]
+  )
+
+  let session = GenerationSession(current: current, incoming: incoming)
+
+  #expect(session.decisions.isEmpty)
+  #expect(session.isResolved)
+  #expect(session.resolvedRoot() == current)
+}
+
+@Test
+func generationIgnoresFolderConflictsWhenNormalizedLeafChildrenOnlyDifferByOrder() {
+  let current = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "Shared Folder",
+        children: [
+          .leaf(title: "Alpha", url: "https://alpha.example"),
+          .leaf(title: "Beta", url: "https://beta.example")
+        ]
+      )
+    ]
+  )
+  let incoming = BookmarkNode.folder(
+    title: "",
+    children: [
+      .folder(
+        title: "shared folder",
+        children: [
+          .leaf(title: "Beta", url: "https://beta.example"),
+          .leaf(title: "Alpha", url: "https://alpha.example")
+        ]
+      )
+    ]
+  )
+
+  let session = GenerationSession(current: current, incoming: incoming)
+
+  #expect(session.decisions.isEmpty)
+  #expect(session.isResolved)
+  #expect(session.resolvedRoot() == current)
+}
+
+@Test
 func generationReportsNoAcceptedContentWhenTheOnlySourceIsRejected() throws {
   let incoming = BookmarkNode.folder(
     title: "",
