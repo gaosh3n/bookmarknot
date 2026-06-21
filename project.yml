@@ -22,7 +22,7 @@ targets:
       Release: Config/Release.xcconfig
     settings:
       base:
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: "$(PRODUCT_DISPLAY_NAME)"
         SWIFT_VERSION: "6.3"
     dependencies:
