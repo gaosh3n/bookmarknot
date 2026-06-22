@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+private enum LaunchSurface {
+  case mainApp
+  case exporterWizardPrototype
+
+  static var current: LaunchSurface {
+    ProcessInfo.processInfo.arguments.contains("--prototype-exporter-wizard")
+      ? .exporterWizardPrototype
+      : .mainApp
+  }
+}
+
 private final class WindowToolbarSuppressorView: NSView {
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
@@ -36,8 +47,15 @@ struct BookmarknotApp: App {
 
   var body: some Scene {
     Window("Bookmarknot", id: "main") {
-      RootView()
-        .background(WindowToolbarSuppressor())
+      Group {
+        switch LaunchSurface.current {
+        case .mainApp:
+          RootView()
+        case .exporterWizardPrototype:
+          ExporterWizardPrototypeRootView()
+        }
+      }
+      .background(WindowToolbarSuppressor())
     }
     .windowStyle(.hiddenTitleBar)
     .defaultSize(width: 960, height: 720)

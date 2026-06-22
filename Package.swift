@@ -24,6 +24,11 @@ targets.append(
   )
 )
 targets.append(
+  .executableTarget(
+    name: "FullBrowserImportAutomationProbe"
+  )
+)
+targets.append(
   .testTarget(
     name: "ApplicationTests",
     dependencies: ["Application", "Domain"]
@@ -58,6 +63,10 @@ let package = Package(
     .library(name: "Application", targets: ["Application"]),
     .library(name: "Infrastructure", targets: ["Infrastructure"]),
     .executable(name: "bookmarknot", targets: ["UI"]),
+    .executable(
+      name: "full-browser-import-automation-probe",
+      targets: ["FullBrowserImportAutomationProbe"]
+    ),
   ],
   targets: targets
 )

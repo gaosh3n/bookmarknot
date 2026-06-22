@@ -21,15 +21,15 @@
 - Build the package: `swift build`
 - Run the macOS application: `swift run bookmarknot`
 - Run the non-UI test suite: `swift test`
+- Run the retained, non-mutating browser automation probe preflight: `swift run full-browser-import-automation-probe preflight`
 - Regenerate the committed Xcode project after changing the Xcode spec: `xcodegen generate`
-- Build the committed Xcode app target for UI automation: `xcodebuild -project bookmarknot.xcodeproj -scheme bookmarknot build`
-- Build the committed Xcode app target with XcodeBuildMCP: `xcodebuildmcp macos build --project-path bookmarknot.xcodeproj --scheme bookmarknot`
 - Discover the full XcodeBuildMCP command surface from the CLI itself: `xcodebuildmcp --help`
 - Prefer one documented command per workflow when possible. If multiple commands are required, document the narrowest verified entrypoint for each task.
 
 ## Workflow
 
 - ADRs live in `docs/adr/`.
+- Decision maps live in `docs/decision-maps/`. They capture working product/design investigations and their current resolutions; consult them before reopening those questions. They are distinct from ADRs in `docs/adr/`.
 - Do not run bare `adr init`; `adr-tools` defaults bare initialization to `doc/adr`.
 - When ADRs are first introduced, run `adr init docs/adr` from the repo root and commit the generated `.adr-dir` file with the first ADR.
 - Use the Michael Nygard ADR template saved at `docs/references/adr-template.md` when writing ADR content.
@@ -61,6 +61,7 @@
 │   └── UITests/
 ├── CONTEXT.md                                 # canonical repo language
 └── docs/
+    ├── decision-maps/                         # working investigation docs for product/design questions
     ├── agents/
     │   ├── domain.md                         # domain-doc consumption rules
     │   ├── issue-tracker.md                  # GitHub issue workflow

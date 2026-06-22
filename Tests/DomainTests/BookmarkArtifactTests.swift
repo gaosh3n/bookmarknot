@@ -213,8 +213,7 @@ func generationAllowsKeepingIncomingOnlyForASameURLConflict() throws {
 }
 
 @Test
-func generationPreservesCurrentFolderCasingForAcceptedDescendantsAfterRejectingBothFolderCandidates()
-  throws {
+func generationPreservesFolderCasingAfterRejectingBothFolderCandidates() throws {
   let current = BookmarkNode.folder(
     title: "",
     children: [.folder(title: "Shared Folder", children: [])]
@@ -261,27 +260,27 @@ func generationPreservesCurrentFolderCasingForAcceptedDescendantsAfterRejectingB
 
 @Test
 func generationIgnoresFolderConflictsWhenNormalizedChildTreesOnlyDifferByOrder() {
+  var currentChildren: [BookmarkNode] = []
+  currentChildren.append(.folder(title: "Alpha", children: []))
+  currentChildren.append(.folder(title: "Beta", children: []))
   let current = BookmarkNode.folder(
     title: "",
     children: [
       .folder(
         title: "Shared Folder",
-        children: [
-          .folder(title: "Alpha", children: []),
-          .folder(title: "Beta", children: [])
-        ]
+        children: currentChildren
       )
     ]
   )
+  var incomingChildren: [BookmarkNode] = []
+  incomingChildren.append(.folder(title: "Beta", children: []))
+  incomingChildren.append(.folder(title: "Alpha", children: []))
   let incoming = BookmarkNode.folder(
     title: "",
     children: [
       .folder(
         title: "shared folder",
-        children: [
-          .folder(title: "Beta", children: []),
-          .folder(title: "Alpha", children: [])
-        ]
+        children: incomingChildren
       )
     ]
   )
@@ -295,27 +294,27 @@ func generationIgnoresFolderConflictsWhenNormalizedChildTreesOnlyDifferByOrder()
 
 @Test
 func generationIgnoresFolderConflictsWhenNormalizedLeafChildrenOnlyDifferByOrder() {
+  var currentChildren: [BookmarkNode] = []
+  currentChildren.append(.leaf(title: "Alpha", url: "https://alpha.example"))
+  currentChildren.append(.leaf(title: "Beta", url: "https://beta.example"))
   let current = BookmarkNode.folder(
     title: "",
     children: [
       .folder(
         title: "Shared Folder",
-        children: [
-          .leaf(title: "Alpha", url: "https://alpha.example"),
-          .leaf(title: "Beta", url: "https://beta.example")
-        ]
+        children: currentChildren
       )
     ]
   )
+  var incomingChildren: [BookmarkNode] = []
+  incomingChildren.append(.leaf(title: "Beta", url: "https://beta.example"))
+  incomingChildren.append(.leaf(title: "Alpha", url: "https://alpha.example"))
   let incoming = BookmarkNode.folder(
     title: "",
     children: [
       .folder(
         title: "shared folder",
-        children: [
-          .leaf(title: "Beta", url: "https://beta.example"),
-          .leaf(title: "Alpha", url: "https://alpha.example")
-        ]
+        children: incomingChildren
       )
     ]
   )
