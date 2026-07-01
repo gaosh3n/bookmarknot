@@ -46,7 +46,7 @@ struct BookmarknotApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
   var body: some Scene {
-    Window("Bookmarknot", id: "main") {
+    Window(RootNavigationPresentation.defaultWindowTitle, id: "main") {
       Group {
         switch LaunchSurface.current {
         case .mainApp:

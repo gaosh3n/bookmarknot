@@ -31,28 +31,150 @@ private struct PanelSeparator: View {
   }
 }
 
-struct RootView: View {
-  private enum Destination: Hashable {
-    case configuration
-    case runtimeLog
+private final class WindowTitleSyncView: NSView {
+  var title = "" {
+    didSet { window?.title = title }
   }
 
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    window?.title = title
+  }
+}
+
+private struct WindowTitleSync: NSViewRepresentable {
+  let title: String
+
+  func makeNSView(context: Context) -> NSView {
+    let view = WindowTitleSyncView()
+    view.title = title
+    return view
+  }
+
+  func updateNSView(_ nsView: NSView, context: Context) {
+    guard let view = nsView as? WindowTitleSyncView else { return }
+    view.title = title
+  }
+}
+
+struct RootView: View {
   @StateObject private var model = BookmarknotModel(services: InfrastructureServices())
-  @State private var destination: Destination? = .configuration
+  @State private var destination: RootDestination = .configuration
+  @State private var generalSidebarDestination = RootNavigationPresentation
+    .defaultSidebarDestination
 
   var body: some View {
-    NavigationSplitView {
-      List(selection: $destination) {
-        Label("Configuration", systemImage: "gearshape").tag(Destination.configuration)
-        Label("Runtime Log", systemImage: "doc.plaintext").tag(Destination.runtimeLog)
+    VStack(spacing: 0) {
+      VStack(spacing: 0) {
+        if RootNavigationPresentation.showsVisualWindowTitle {
+          Text(RootNavigationPresentation.windowTitle(for: destination))
+            .font(.system(size: 14, weight: .semibold))
+            .frame(
+              maxWidth: .infinity,
+              alignment: RootNavigationPresentation.titleAlignment == .center ? .center : .leading
+            )
+            .padding(.top, RootNavigationPresentation.topPadding)
+            .padding(.bottom, RootNavigationPresentation.titleBottomPadding)
+        }
+
+        HStack(spacing: 8) {
+          ForEach(RootNavigationPresentation.menuItems, id: \.destination) { item in
+            Button {
+              destination = item.destination
+            } label: {
+              VStack(spacing: RootNavigationPresentation.menuItemSpacing) {
+                Image(systemName: item.systemImage)
+                  .font(.system(size: RootNavigationPresentation.menuIconSize, weight: .medium))
+                  .frame(width: 32, height: 28)
+                  .background {
+                    if RootNavigationPresentation.menuItemsUseIconTile {
+                      RoundedRectangle(
+                        cornerRadius: RootNavigationPresentation.menuItemCornerRadius,
+                        style: .continuous
+                      )
+                      .fill(
+                        destination == item.destination
+                          ? Color.accentColor.opacity(0.14)
+                          : Color.secondary.opacity(0.10)
+                      )
+                    }
+                  }
+                Text(item.title)
+                  .font(.system(size: RootNavigationPresentation.menuTextSize, weight: .medium))
+                  .lineLimit(1)
+              }
+              .foregroundStyle(destination == item.destination ? Color.accentColor : .primary)
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, RootNavigationPresentation.menuItemVerticalPadding)
+              .padding(.horizontal, RootNavigationPresentation.menuItemHorizontalPadding)
+              .background(
+                RoundedRectangle(cornerRadius: RootNavigationPresentation.menuItemCornerRadius)
+                  .fill(
+                    selectedMenuItemBackground(isSelected: destination == item.destination)
+                  )
+                  .shadow(
+                    color: selectedMenuItemShadow(isSelected: destination == item.destination),
+                    radius: selectedMenuItemShadowRadius(
+                      isSelected: destination == item.destination),
+                    x: 0,
+                    y: selectedMenuItemShadowYOffset(isSelected: destination == item.destination)
+                  )
+              )
+              .overlay {
+                if RootNavigationPresentation.menuItemsUseOutlinedShape {
+                  RoundedRectangle(cornerRadius: RootNavigationPresentation.menuItemCornerRadius)
+                    .stroke(
+                      destination == item.destination
+                        ? Color.accentColor.opacity(0.45)
+                        : Color.secondary.opacity(0.35),
+                      lineWidth: 1
+                    )
+                }
+              }
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: RootNavigationPresentation.menuItemMaximumWidth)
+            .accessibilityLabel(item.title)
+          }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, RootNavigationPresentation.menuTopPadding)
+        .padding(.horizontal, PanelLayout.horizontalInset)
+        .padding(.bottom, RootNavigationPresentation.menuBottomPadding)
+
+        if RootNavigationPresentation.showsSeparatorBelowMenu {
+          Divider()
+        }
       }
-      .navigationSplitViewColumnWidth(min: 180, ideal: 220)
-    } detail: {
-      switch destination {
-      case .configuration, .none:
-        ConfigurationView(model: model)
-      case .runtimeLog:
-        RuntimeLogView(model: model)
+      NavigationSplitView {
+        switch RootNavigationPresentation.topLevelDestination(for: destination) {
+        case .general:
+          List(selection: $generalSidebarDestination) {
+            ForEach(
+              RootNavigationPresentation.sidebarItems(for: .general),
+              id: \.destination
+            ) { item in
+              Label(item.title, systemImage: item.systemImage).tag(item.destination)
+            }
+          }
+          .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+        case .advanced:
+          Color.clear
+            .frame(minWidth: 0, idealWidth: 0, maxWidth: 0)
+        }
+      } detail: {
+        switch RootNavigationPresentation.topLevelDestination(for: destination) {
+        case .general:
+          switch generalSidebarDestination {
+          case .importer:
+            ConfigurationView(model: model)
+          case .exporter:
+            ExporterPlaceholderView()
+          }
+        case .advanced:
+          RuntimeLogView(model: model)
+        }
       }
     }
     .alert(item: $model.dialog) { dialog in
@@ -66,7 +188,62 @@ struct RootView: View {
     ) {
       GenerationWizard(model: model)
     }
+    .background(WindowTitleSync(title: RootNavigationPresentation.windowTitle(for: destination)))
     .frame(minWidth: 900, minHeight: 600)
+    .onChange(of: destination) { _, newDestination in
+      if RootNavigationPresentation.topLevelDestination(for: newDestination) == .general {
+        generalSidebarDestination = RootNavigationPresentation.defaultSidebarDestination
+      }
+    }
+  }
+
+  private func selectedMenuItemBackground(isSelected: Bool) -> Color {
+    guard isSelected, RootNavigationPresentation.menuItemsUseSelectedBackground else {
+      return Color.clear
+    }
+    if RootNavigationPresentation.menuSelectedBackgroundUsesAccentTint {
+      return Color.accentColor.opacity(0.12)
+    }
+    return Color(nsColor: .controlBackgroundColor)
+  }
+
+  private func selectedMenuItemShadow(isSelected: Bool) -> Color {
+    guard isSelected else { return Color.clear }
+    return Color.black.opacity(RootNavigationPresentation.menuSelectedShadowOpacity)
+  }
+
+  private func selectedMenuItemShadowRadius(isSelected: Bool) -> Double {
+    isSelected ? RootNavigationPresentation.menuSelectedShadowRadius : 0
+  }
+
+  private func selectedMenuItemShadowYOffset(isSelected: Bool) -> Double {
+    isSelected ? RootNavigationPresentation.menuSelectedShadowYOffset : 0
+  }
+}
+
+private struct ExporterPlaceholderView: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: PanelLayout.spacing) {
+      HStack {
+        Text(RootNavigationPresentation.exporterSkeletonTitle)
+          .font(.headline)
+        Spacer()
+        Button(RootNavigationPresentation.exporterSkeletonSecondaryControlTitle) {}
+          .disabled(!RootNavigationPresentation.exporterSkeletonControlsAreEnabled)
+        Button(RootNavigationPresentation.exporterSkeletonPrimaryControlTitle) {}
+          .disabled(!RootNavigationPresentation.exporterSkeletonControlsAreEnabled)
+      }
+      ZStack {
+        RoundedRectangle(cornerRadius: 6)
+          .stroke(Color(nsColor: .separatorColor))
+        TablePlaceholder(
+          title: "No exports",
+          systemImage: "square.and.arrow.up",
+          description: "Exporter behavior will be wired by a later integration issue."
+        )
+      }
+    }
+    .padding(PanelLayout.horizontalInset)
   }
 }
 
